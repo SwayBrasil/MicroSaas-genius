@@ -1183,12 +1183,23 @@ async def meta_webhook(req: Request, db: Session = Depends(get_db)):
 # -----------------------------
 @app.post("/webhooks/twilio")
 async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
-    form = await req.form()
-    from_ = str(form.get("From", "")).replace("whatsapp:", "")
-    body = form.get("Body", "") or ""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("[WEBHOOK-TWILIO] Received POST request")
     
-    # Tenta capturar o nome do perfil do WhatsApp (Twilio pode enviar ProfileName)
-    profile_name = form.get("ProfileName") or form.get("Profile Name") or None
+    try:
+        form = await req.form()
+        from_ = str(form.get("From", "")).replace("whatsapp:", "")
+        body = form.get("Body", "") or ""
+        logger.info(f"[WEBHOOK-TWILIO] Message from {from_}: {body[:100]}")
+        
+        # Tenta capturar o nome do perfil do WhatsApp (Twilio pode enviar ProfileName)
+        profile_name = form.get("ProfileName") or form.get("Profile Name") or None
+        if profile_name:
+            logger.info(f"[WEBHOOK-TWILIO] Profile name: {profile_name}")
+    except Exception as e:
+        logger.error(f"[WEBHOOK-TWILIO] Error parsing webhook: {str(e)}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
     owner_email = os.getenv("INBOX_OWNER_EMAIL", "dev@local.com")
     owner = db.query(User).filter(User.email == owner_email).first()
@@ -1279,15 +1290,22 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
     )
 
     if getattr(t, "human_takeover", False):
+        logger.info(f"[WEBHOOK-TWILIO] Thread {t.id} in human takeover, skipping LLM")
         return {"status": "ok", "skipped_llm": True}
 
     hist = [
         {"role": m.role, "content": m.content}
         for m in db.query(Message).filter(Message.thread_id == t.id).order_by(Message.id.asc()).all()
     ]
+    logger.info(f"[WEBHOOK-TWILIO] Processing LLM for thread {t.id}, history length: {len(hist)}")
 
     await _broadcast(t.id, {"type": "assistant.typing.start"})
-    reply = await run_llm(body, thread_history=hist, takeover=False)
+    try:
+        reply = await run_llm(body, thread_history=hist, takeover=False)
+        logger.info(f"[WEBHOOK-TWILIO] LLM reply generated: {reply[:100]}...")
+    except Exception as e:
+        logger.error(f"[WEBHOOK-TWILIO] Error generating LLM reply: {str(e)}", exc_info=True)
+        reply = "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente."
     await _broadcast(t.id, {"type": "assistant.typing.stop"})
 
     m_assist = Message(thread_id=t.id, role="assistant", content=reply)
@@ -1300,7 +1318,15 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         {"type": "message.created", "message": {"id": m_assist.id, "role": "assistant", "content": reply}},
     )
 
-    await asyncio.to_thread(twilio_provider.send_text, from_, reply, "BOT")
+    # Envia resposta via Twilio
+    try:
+        logger.info(f"[WEBHOOK-TWILIO] Sending reply to {from_}: {reply[:50]}...")
+        sid = await asyncio.to_thread(twilio_provider.send_text, from_, reply, "BOT")
+        logger.info(f"[WEBHOOK-TWILIO] Message sent successfully. SID: {sid}")
+    except Exception as e:
+        logger.error(f"[WEBHOOK-TWILIO] Error sending reply to {from_}: {str(e)}", exc_info=True)
+        # Não retorna erro para não quebrar o webhook, mas loga o problema
+    
     return {"status": "ok"}
 
 # -----------------------------
