@@ -1191,7 +1191,12 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         form = await req.form()
         from_ = str(form.get("From", "")).replace("whatsapp:", "")
         body = form.get("Body", "") or ""
-        logger.info(f"[WEBHOOK-TWILIO] Message from {from_}: {body[:100]}")
+        
+        # Detecta mídia (Twilio envia NumMedia quando há anexos)
+        num_media = int(form.get("NumMedia", "0") or "0")
+        has_media = num_media > 0
+        
+        logger.info(f"[WEBHOOK-TWILIO] Message from {from_}: {body[:100]}, Media: {num_media}")
         
         # Tenta capturar o nome do perfil do WhatsApp (Twilio pode enviar ProfileName)
         profile_name = form.get("ProfileName") or form.get("Profile Name") or None
@@ -1279,14 +1284,74 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         db.add(contact)
         db.commit()
 
-    m_user = Message(thread_id=t.id, role="user", content=body)
+    # Processa mídia se houver
+    media_context = ""
+    if has_media:
+        # Envia resposta imediata "Estou processando..."
+        processing_msg = "📎 Recebi sua mídia. Estou analisando, um minuto..."
+        try:
+            await asyncio.to_thread(twilio_provider.send_text, from_, processing_msg, "BOT")
+            logger.info(f"[WEBHOOK-TWILIO] Sent processing message to {from_}")
+        except Exception as e:
+            logger.error(f"[WEBHOOK-TWILIO] Error sending processing message: {str(e)}")
+        
+        # Processa cada mídia recebida
+        from .services import media_processor
+        
+        for i in range(num_media):
+            media_url = form.get(f"MediaUrl{i}")
+            content_type = form.get(f"MediaContentType{i}")
+            
+            if not media_url:
+                continue
+            
+            logger.info(f"[WEBHOOK-TWILIO] Processing media {i+1}/{num_media}: {content_type}")
+            
+            # Determina tipo de mídia
+            if content_type and content_type.startswith("audio/"):
+                media_type = "audio"
+            elif content_type and content_type.startswith("image/"):
+                media_type = "image"
+            else:
+                media_type = "document"
+            
+            # Processa mídia
+            result = await media_processor.process_media(
+                media_url=media_url,
+                media_type=media_type,
+                filename=form.get(f"MediaFilename{i}"),
+                mime_type=content_type
+            )
+            
+            if result["success"]:
+                if media_type == "audio":
+                    # Formato que a IA entenderá como transcrição direta
+                    media_context += f"\n[Áudio transcrito]: {result['content']}\n"
+                elif media_type == "image":
+                    # Formato que a IA entenderá como descrição visual direta
+                    media_context += f"\n[Descrição da imagem]: {result['content']}\n"
+                else:
+                    # Formato que a IA entenderá como conteúdo do documento
+                    media_context += f"\n[Conteúdo do documento]: {result['content']}\n"
+            else:
+                media_context += f"\n[Erro ao processar mídia {i+1}]: {result.get('error', 'Erro desconhecido')}\n"
+                logger.error(f"[WEBHOOK-TWILIO] Error processing media: {result.get('error')}")
+    
+    # Combina texto da mensagem com contexto da mídia
+    full_content = body
+    if media_context:
+        full_content = f"{body}\n{media_context}".strip()
+        if not body:
+            full_content = media_context.strip()
+    
+    m_user = Message(thread_id=t.id, role="user", content=full_content)
     db.add(m_user)
     db.commit()
     db.refresh(m_user)
 
     await _broadcast(
         t.id,
-        {"type": "message.created", "message": {"id": m_user.id, "role": "user", "content": body}},
+        {"type": "message.created", "message": {"id": m_user.id, "role": "user", "content": full_content}},
     )
 
     if getattr(t, "human_takeover", False):
@@ -1301,7 +1366,7 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
 
     await _broadcast(t.id, {"type": "assistant.typing.start"})
     try:
-        reply = await run_llm(body, thread_history=hist, takeover=False)
+        reply = await run_llm(full_content, thread_history=hist, takeover=False)
         logger.info(f"[WEBHOOK-TWILIO] LLM reply generated: {reply[:100]}...")
     except Exception as e:
         logger.error(f"[WEBHOOK-TWILIO] Error generating LLM reply: {str(e)}", exc_info=True)
