@@ -16,7 +16,7 @@ def set_takeover(thread_id: int, body: TakeoverToggle,
                  user: User = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     t = db.get(Thread, thread_id)
-    if not t or t.user_id != user.id:
+    if not t:
         raise HTTPException(404, "Thread not found")
     t.human_takeover = bool(body.active)
     db.add(t); db.commit(); db.refresh(t)
@@ -27,7 +27,7 @@ def human_reply(thread_id: int, body: HumanReplyBody,
                 user: User = Depends(get_current_user),
                 db: Session = Depends(get_db)):
     t = db.get(Thread, thread_id)
-    if not t or t.user_id != user.id:
+    if not t:
         raise HTTPException(404, "Thread not found")
 
     # 1) salva no histórico (marcado como mensagem humana)

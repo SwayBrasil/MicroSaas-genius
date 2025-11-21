@@ -91,6 +91,8 @@ function Sidebar({
   leadFilter,
   setLeadFilter,
   leadScores,
+  isMobile,
+  onClose,
 }: {
   threads: Thread[];
   activeId?: string;
@@ -101,6 +103,8 @@ function Sidebar({
   leadFilter: LeadLevel | "todos";
   setLeadFilter: (l: LeadLevel | "todos") => void;
   leadScores: Record<string, { score?: number; level: LeadLevel }>;
+  isMobile?: boolean;
+  onClose?: () => void;
 }) {
   const [q, setQ] = useState("");
 
@@ -130,90 +134,170 @@ function Sidebar({
   return (
     <aside
       style={{
-        width: 300,
-        borderRight: "1px solid var(--border)",
+        width: "100%",
         height: "100%",
+        maxWidth: "100%",
+        maxHeight: "100%",
         overflow: "hidden",
-        display: "grid",
-        gridTemplateRows: "auto auto auto 1fr",
+        display: "flex",
+        flexDirection: "column",
         background: "var(--panel)",
+        boxSizing: "border-box",
       }}
       aria-label="Lista de conversas"
     >
-      <div style={{ padding: 12, display: "flex", gap: 8 }}>
-        <button className="btn" onClick={onNew} style={{ width: "100%" }} aria-label="Criar nova conversa">
-          + Nova
-        </button>
-      </div>
+      {/* Header da sidebar */}
+      <div style={{ 
+        padding: "16px", 
+        borderBottom: "1px solid var(--border)", 
+        background: "var(--panel)",
+        flexShrink: 0,
+      }}>
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          justifyContent: "space-between", 
+          gap: 12,
+          marginBottom: 12 
+        }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, flex: 1, minWidth: 0 }}>Conversas</h2>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {isMobile && onClose && (
+              <button
+                onClick={onClose}
+                style={{
+                  padding: "8px",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  fontSize: 18,
+                  color: "var(--text)",
+                  display: "flex",
+                  alignItems: "center",
+                }}
+                aria-label="Fechar lista de conversas"
+              >
+                ✕
+              </button>
+            )}
+            <button 
+              className="btn" 
+              onClick={onNew} 
+              style={{ 
+                padding: "8px 14px",
+                borderRadius: 8,
+                background: "var(--primary-color)",
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 14,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }} 
+              aria-label="Criar nova conversa"
+            >
+              + Nova
+            </button>
+          </div>
+        </div>
 
-      <div style={{ padding: "0 12px 8px", display: "flex", gap: 6 }} role="tablist" aria-label="Filtros de temperatura">
-        <button
-          className={clsx("btn", leadFilter === "todos" ? "" : "soft")}
-          onClick={() => setLeadFilter("todos")}
-          title="Mostrar todas"
-          style={{ flex: 1 }}
-          aria-pressed={leadFilter === "todos"}
-          aria-label="Mostrar todas as conversas"
-        >
-          Todos
-        </button>
-        <button
-          className={clsx("btn", leadFilter === "frio" ? "" : "soft")}
-          onClick={() => setLeadFilter("frio")}
-          title="Somente Frios"
-          style={{ flex: 1 }}
-          aria-pressed={leadFilter === "frio"}
-          aria-label="Filtrar conversas frias"
-        >
-          ❄️
-        </button>
-        <button
-          className={clsx("btn", leadFilter === "morno" ? "" : "soft")}
-          onClick={() => setLeadFilter("morno")}
-          title="Somente Mornos"
-          style={{ flex: 1 }}
-          aria-pressed={leadFilter === "morno"}
-          aria-label="Filtrar conversas mornas"
-        >
-          🌤️
-        </button>
-        <button
-          className={clsx("btn", leadFilter === "quente" ? "" : "soft")}
-          onClick={() => setLeadFilter("quente")}
-          title="Somente Quentes"
-          style={{ flex: 1 }}
-          aria-pressed={leadFilter === "quente"}
-          aria-label="Filtrar conversas quentes"
-        >
-          🔥
-        </button>
-      </div>
+        {/* Filtros de temperatura */}
+        <div style={{ 
+          display: "flex", 
+          gap: 6,
+          marginBottom: 12,
+        }} role="tablist" aria-label="Filtros de temperatura">
+          <button
+            className={clsx("btn", leadFilter === "todos" ? "" : "soft")}
+            onClick={() => setLeadFilter("todos")}
+            title="Mostrar todas"
+            style={{ flex: 1, padding: "6px 8px", fontSize: 13 }}
+            aria-pressed={leadFilter === "todos"}
+            aria-label="Mostrar todas as conversas"
+          >
+            Todos
+          </button>
+          <button
+            className={clsx("btn", leadFilter === "frio" ? "" : "soft")}
+            onClick={() => setLeadFilter("frio")}
+            title="Somente Frios"
+            style={{ flex: 1, padding: "6px 8px", fontSize: 16 }}
+            aria-pressed={leadFilter === "frio"}
+            aria-label="Filtrar conversas frias"
+          >
+            ❄️
+          </button>
+          <button
+            className={clsx("btn", leadFilter === "morno" ? "" : "soft")}
+            onClick={() => setLeadFilter("morno")}
+            title="Somente Mornos"
+            style={{ flex: 1, padding: "6px 8px", fontSize: 16 }}
+            aria-pressed={leadFilter === "morno"}
+            aria-label="Filtrar conversas mornas"
+          >
+            🌤️
+          </button>
+          <button
+            className={clsx("btn", leadFilter === "quente" ? "" : "soft")}
+            onClick={() => setLeadFilter("quente")}
+            title="Somente Quentes"
+            style={{ flex: 1, padding: "6px 8px", fontSize: 16 }}
+            aria-pressed={leadFilter === "quente"}
+            aria-label="Filtrar conversas quentes"
+          >
+            🔥
+          </button>
+        </div>
 
-      <div style={{ padding: "0 12px 12px" }}>
+        {/* Busca */}
         <input
           className="input"
-          placeholder="Buscar conversa..."
+          placeholder="Buscar ou começar nova conversa"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           aria-label="Buscar conversa"
           type="search"
+          style={{
+            width: "100%",
+            padding: "10px 16px",
+            borderRadius: 20,
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            fontSize: 14,
+            boxSizing: "border-box",
+          }}
         />
       </div>
 
-      <div style={{ overflowY: "auto", padding: 8 }} role="list" aria-label="Lista de conversas">
+      <div style={{ 
+        overflowY: "auto", 
+        overflowX: "hidden",
+        flex: 1, 
+        minHeight: 0,
+        maxHeight: "100%",
+        boxSizing: "border-box",
+      }} role="list" aria-label="Lista de conversas">
         {loading && (
-          <div className="small" style={{ color: "var(--muted)", padding: "0 8px" }} role="status" aria-live="polite">
+          <div className="small" style={{ color: "var(--muted)", padding: "16px" }} role="status" aria-live="polite">
             Carregando conversas...
           </div>
         )}
 
         {!loading && filtered.length === 0 && (
-          <div className="small" style={{ color: "var(--muted)", padding: "0 8px" }} role="status">
+          <div className="small" style={{ color: "var(--muted)", padding: "16px" }} role="status">
             Nenhuma conversa encontrada.
           </div>
         )}
 
-        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        <ul style={{ 
+          listStyle: "none", 
+          padding: 0, 
+          margin: 0, 
+          display: "flex", 
+          flexDirection: "column",
+        }}>
           {filtered.map((t) => {
             const entry = leadScores[String(t.id)] || { level: "desconhecido" as LeadLevel, score: undefined };
             // Prioriza o nome do contato, depois o título, depois "Sem título"
@@ -233,16 +317,22 @@ function Sidebar({
                     textAlign: "left",
                     display: "flex",
                     flexDirection: "column",
-                    padding: "14px 16px",
-                    minHeight: "80px",
+                    padding: "12px 16px",
+                    minHeight: "72px",
                     height: "auto",
                     boxSizing: "border-box",
                     position: "relative",
                     cursor: "pointer",
                     background: isActive ? "var(--bg)" : "transparent",
                     border: "none",
-                    borderRadius: 0,
                     gap: 6,
+                    transition: "background 0.2s ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "var(--bg)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) e.currentTarget.style.background = "transparent";
                   }}
                   title={lastMsg ? `${displayName}\n${lastMsg}` : displayName}
                 >
@@ -348,19 +438,53 @@ function Sidebar({
 }
 
 /** Bolha de mensagem */
-function Bubble({ m }: { m: UIMessage }) {
+function Bubble({ m, isMobile, thread }: { m: UIMessage; isMobile?: boolean; thread?: Thread }) {
   const isUser = m.role === "user";
   const assistantLabel = (m as any).is_human ? "Assistente (Humano)" : "Assistente";
+  
+  // Para mensagens do usuário, tenta pegar o nome do contato
+  let userLabel = "Usuário";
+  if (isUser && thread) {
+    const name = thread.contact_name || 
+                 thread.title || 
+                 (thread.metadata as any)?.name ||
+                 (thread.metadata as any)?.profile_name;
+    
+    if (name && name.trim()) {
+      userLabel = name.trim();
+    } else {
+      // Fallback: mostra número de telefone
+      const phone = (thread.metadata as any)?.wa_id || 
+                   (thread.metadata as any)?.phone || 
+                   thread.external_user_phone;
+      if (phone) {
+        const phoneStr = String(phone).replace(/[^\d]/g, "");
+        userLabel = phoneStr.length > 4 ? `+${phoneStr}` : phoneStr;
+      }
+    }
+  }
+  
   return (
     <div
       className={clsx("bubble", isUser ? "user" : "assistant")}
       aria-label={isUser ? "Mensagem do usuário" : "Resposta do assistente"}
+      style={{
+        maxWidth: isMobile ? "85%" : "min(720px, 100%)",
+        padding: isMobile ? "8px 10px" : "10px 12px",
+      }}
     >
-      <div className="meta">
-        <span className="role">{isUser ? "Usuário" : assistantLabel}</span>
+      <div className="meta" style={{ 
+        fontSize: isMobile ? 11 : 12,
+        marginBottom: isMobile ? 4 : 6,
+        gap: isMobile ? 6 : 10,
+      }}>
+        <span className="role">{isUser ? userLabel : assistantLabel}</span>
         <span className="time">{formatTime(m.created_at || Date.now())}</span>
       </div>
-      <div className="content">{m.content}</div>
+      <div className="content" style={{ 
+        fontSize: isMobile ? 14 : 14,
+        lineHeight: isMobile ? 1.4 : 1.5,
+      }}>{m.content}</div>
     </div>
   );
 }
@@ -391,6 +515,13 @@ function Composer({
   takeoverActive: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -406,26 +537,102 @@ function Composer({
     }
   }
 
+  const isDisabled = disabled || !takeoverActive;
+
   return (
-    <div style={{ padding: 12, borderTop: "1px solid var(--border)", background: "var(--bg)" }}>
-      <div className="composer">
+    <div style={{ 
+      padding: isMobile ? "8px 10px" : "12px 16px", 
+      borderTop: "1px solid var(--border)", 
+      background: "var(--panel)",
+      flexShrink: 0,
+      width: "100%",
+      maxWidth: "100%",
+      boxSizing: "border-box",
+      opacity: takeoverActive ? 1 : 0.6,
+    }}>
+      {!takeoverActive && (
+        <div style={{
+          padding: "8px 12px",
+          marginBottom: 8,
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+          borderRadius: 8,
+          fontSize: isMobile ? 12 : 13,
+          color: "var(--muted)",
+          textAlign: "center",
+        }}>
+          ⚠️ Ative "👤 Assumir conversa" acima para enviar mensagens
+        </div>
+      )}
+      <div className="composer" style={{ 
+        display: "flex", 
+        gap: isMobile ? 6 : 8, 
+        alignItems: "flex-end",
+        width: "100%",
+        maxWidth: "100%",
+        boxSizing: "border-box",
+      }}>
         <textarea
           ref={ref}
           className="input"
-          placeholder={takeoverActive ? "Você está respondendo como HUMANO..." : "Escreva sua mensagem..."}
+          placeholder={takeoverActive ? "Você está respondendo como HUMANO..." : "Ative 'Assumir conversa' para enviar mensagens"}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            if (takeoverActive) {
+              setValue(e.target.value);
+            }
+          }}
           onKeyDown={handleKeyDown}
           rows={1}
           aria-label="Caixa de mensagem"
+          disabled={isDisabled}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            maxWidth: "100%",
+            borderRadius: isMobile ? 18 : 20,
+            padding: isMobile ? "8px 12px" : "10px 16px",
+            border: "1px solid var(--border)",
+            background: isDisabled ? "var(--panel)" : "var(--bg)",
+            resize: "none",
+            fontSize: isMobile ? 14 : 14,
+            maxHeight: isMobile ? 100 : 120,
+            overflowY: "auto",
+            minHeight: isMobile ? 36 : 40,
+            boxSizing: "border-box",
+            cursor: isDisabled ? "not-allowed" : "text",
+            opacity: isDisabled ? 0.6 : 1,
+          }}
         />
-        <button className="btn" onClick={onSend} disabled={disabled || !value.trim()}>
-          {takeoverActive ? "Enviar (humano)" : "Enviar"}
+        <button 
+          className="btn" 
+          onClick={onSend} 
+          disabled={isDisabled || !value.trim()}
+          style={{
+            padding: isMobile ? "8px 16px" : "10px 20px",
+            borderRadius: isMobile ? 18 : 20,
+            background: isDisabled || !value.trim() ? "var(--muted)" : "var(--primary-color)",
+            color: "white",
+            border: "none",
+            cursor: isDisabled || !value.trim() ? "not-allowed" : "pointer",
+            fontWeight: 600,
+            fontSize: isMobile ? 13 : 14,
+            minWidth: isMobile ? 70 : 80,
+            maxWidth: isMobile ? 70 : "none",
+            height: isMobile ? 36 : "auto",
+            flexShrink: 0,
+            boxSizing: "border-box",
+            opacity: isDisabled ? 0.5 : 1,
+          }}
+        >
+          Enviar
         </button>
       </div>
-      <div className="small" style={{ color: "var(--muted)", marginTop: 6 }}>
-        Enter para enviar • Shift + Enter para nova linha
-      </div>
+      {!isMobile && takeoverActive && (
+        <div className="small" style={{ color: "var(--muted)", marginTop: 6, fontSize: 11 }}>
+          Enter para enviar • Shift + Enter para nova linha
+        </div>
+      )}
     </div>
   );
 }
@@ -560,11 +767,48 @@ export default function Chat() {
     const fetchAndMerge = async () => {
       try {
         const serverMsgs = await getMessages(Number(activeId));
+        let shouldClearTyping = false;
+        
         setMessages((prev) => {
           const map = new Map(prev.map((m) => [String(m.id), m]));
+          
+          // Remove mensagens temporárias que já têm correspondente real
+          const tempToRemove: string[] = [];
+          for (const [id, msg] of map.entries()) {
+            if (id.startsWith("temp-")) {
+              // Verifica se já existe mensagem real com mesmo conteúdo e role
+              const hasReal = serverMsgs.some((m: UIMessage) => 
+                m.role === msg.role && 
+                m.content.trim() === msg.content.trim() &&
+                Math.abs(new Date(m.created_at).getTime() - new Date(msg.created_at).getTime()) < 5000
+              );
+              if (hasReal) {
+                tempToRemove.push(id);
+              }
+            }
+          }
+          tempToRemove.forEach(id => map.delete(id));
+          
+          // Adiciona/atualiza mensagens do servidor
           for (const m of serverMsgs as UIMessage[]) {
             map.set(String(m.id), m);
           }
+          
+          // Verifica se a última mensagem do servidor é do assistente
+          // e se é mais recente que a última mensagem do usuário
+          if (serverMsgs.length > 0) {
+            const lastMsg = serverMsgs[serverMsgs.length - 1];
+            const lastUserMsg = [...serverMsgs].reverse().find((m: UIMessage) => m.role === "user");
+            
+            // Se a última mensagem é do assistente e é mais recente que a última do usuário,
+            // significa que o assistente já respondeu
+            if (lastMsg.role === "assistant") {
+              if (!lastUserMsg || new Date(lastMsg.created_at) > new Date(lastUserMsg.created_at)) {
+                shouldClearTyping = true;
+              }
+            }
+          }
+          
           return Array.from(map.values()).sort((a, b) => {
             const ai = String(a.id), bi = String(b.id);
             if (ai.startsWith("temp-") && !bi.startsWith("temp-")) return -1;
@@ -572,6 +816,12 @@ export default function Chat() {
             return Number(a.id) - Number(b.id);
           });
         });
+        
+        // Limpa isTyping se o assistente já respondeu
+        if (shouldClearTyping) {
+          setIsTyping(false);
+          setAssistantBuffer("");
+        }
 
         // repontua a ativa e atualiza thread (move para o topo se tiver nova mensagem)
         const t = threads.find(x => String(x.id) === activeId);
@@ -711,8 +961,10 @@ export default function Chat() {
     try {
       if (takeoverActive) {
         await postHumanReply(Number(activeId), content);
+        setIsTyping(false);
       } else {
         await postMessage(Number(activeId), content);
+        // isTyping será limpo quando a resposta do assistente chegar via polling
       }
     } catch (e: any) {
       setErrorMsg(e?.response?.data?.detail || e?.message || "Falha ao enviar. Tente novamente.");
@@ -760,135 +1012,531 @@ export default function Chat() {
     if (t) refreshLeadForThread(t, messages); // aplica na hora
   }
 
+  const [showSidebar, setShowSidebar] = useState(true); // Para mobile
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // Detecta mudanças no tamanho da tela
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setShowSidebar(true); // Sempre mostra sidebar no desktop
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    handleResize(); // Chama uma vez no mount
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  // No mobile, esconde sidebar quando chat está aberto
+  useEffect(() => {
+    if (activeId && isMobile) {
+      setShowSidebar(false);
+    }
+  }, [activeId, isMobile]);
+
   return (
     <div
       style={{
-        height: "calc(100vh - 56px)",
+        height: "100vh",
+        width: "100vw",
+        maxHeight: "100vh",
+        maxWidth: "100vw",
         minHeight: 0,
+        minWidth: 0,
         overflow: "hidden",
         background: "var(--bg)",
         color: "var(--text)",
-        display: "grid",
-        gridTemplateColumns: "300px 1fr",
+        display: "flex",
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        boxSizing: "border-box",
       }}
     >
-      <Sidebar
-        threads={threads}
-        activeId={activeId}
-        onSelect={setActiveId}
-        onNew={handleNewThread}
-        onDelete={handleDeleteThread}
-        loading={loadingThreads}
-        leadFilter={leadFilter}
-        setLeadFilter={setLeadFilter}
-        leadScores={leadScores}
-      />
-
-      {/* Main */}
-      <main
+      {/* Sidebar - Lista de Conversas */}
+      <div
         style={{
+          width: activeId && isMobile && !showSidebar ? 0 : isMobile ? "100%" : 350,
+          minWidth: activeId && isMobile && !showSidebar ? 0 : isMobile ? 0 : 350,
+          maxWidth: activeId && isMobile && !showSidebar ? 0 : isMobile ? "100%" : 350,
           height: "100%",
-          minHeight: 0,
-          display: "grid",
-          gridTemplateRows: "auto 1fr auto",
+          maxHeight: "100%",
+          borderRight: isMobile ? "none" : "1px solid var(--border)",
+          background: "var(--panel)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          transition: "all 0.3s ease",
+          position: isMobile ? "absolute" : "relative",
+          zIndex: isMobile ? 10 : 1,
+          left: isMobile && !showSidebar ? "-100%" : 0,
+          top: 0,
+          boxShadow: isMobile && showSidebar ? "2px 0 8px rgba(0,0,0,0.1)" : "none",
+          boxSizing: "border-box",
         }}
-        aria-label="Janela do chat"
       >
-        {/* Barra de status / takeover */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: "10px 16px",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--panel)",
-            justifyContent: "space-between",
-            flexWrap: "wrap",
+        <Sidebar
+          threads={threads}
+          activeId={activeId}
+          onSelect={(id) => {
+            setActiveId(id);
+            if (isMobile) setShowSidebar(false);
           }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={takeoverActive}
-                onChange={(e) => toggleTakeover(e.target.checked)}
-              />
-              <span>👤 Assumir conversa (pausar IA)</span>
-            </label>
+          onNew={handleNewThread}
+          onDelete={handleDeleteThread}
+          loading={loadingThreads}
+          leadFilter={leadFilter}
+          setLeadFilter={setLeadFilter}
+          leadScores={leadScores}
+          isMobile={isMobile}
+          onClose={() => setShowSidebar(false)}
+        />
+      </div>
 
-            {takeoverActive && (
-              <span className="chip" style={{ background: "#1e3a8a", color: "white" }}>
-                Modo humano ativo — a IA está pausada
-              </span>
-            )}
-          </div>
-
-          {/* Lead tag + override */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <LeadTag level={activeLead.level} score={activeLead.score} />
-            <div className="small" style={{ color: "var(--muted)" }}>Temperatura</div>
-            <select
-              className="input"
-              value={getOverrideLevel(activeId || "") || "auto"}
-              onChange={(e) => {
-                const v = e.target.value as LeadLevel | "auto";
-                handleOverride(v === "auto" ? null : (v as LeadLevel));
-              }}
-              title="Ajuste manual (salvo localmente)"
-              aria-label="Ajustar temperatura do lead manualmente"
-            >
-              <option value="auto">Auto</option>
-              <option value="frio">Frio</option>
-              <option value="morno">Morno</option>
-              <option value="quente">Quente</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Lista de mensagens */}
-        <div
-          ref={listRef}
+      {/* Área do Chat */}
+      {activeId ? (
+        <main
           style={{
-            overflowY: "auto",
-            padding: "12px 16px",
-            background: "var(--bg)",
+            flex: 1,
+            height: "100%",
+            maxHeight: "100%",
+            width: isMobile && showSidebar ? 0 : "100%",
             minHeight: 0,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            background: "var(--bg)",
+            overflow: "hidden",
+            boxSizing: "border-box",
           }}
+          aria-label="Janela do chat"
         >
+          {/* Header do Chat com Menu */}
+          <div
+            style={{
+              minHeight: isMobile ? 50 : 60,
+              height: "auto",
+              maxHeight: isMobile ? "60px" : "80px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--panel)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: isMobile ? "8px 10px" : "10px 12px",
+              position: "relative",
+              flexShrink: 0,
+              gap: isMobile ? 6 : 8,
+              boxSizing: "border-box",
+              overflow: "visible",
+            }}
+          >
+            {/* Botão voltar/fechar conversa */}
+            <button
+              onClick={() => {
+                setActiveId(undefined);
+                if (isMobile) {
+                  setShowSidebar(true);
+                }
+              }}
+              style={{
+                padding: isMobile ? "8px 12px" : "8px 12px",
+                marginRight: isMobile ? 6 : 8,
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: 8,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: isMobile ? 20 : 18,
+                color: "var(--text)",
+                flexShrink: 0,
+                minWidth: isMobile ? 40 : 36,
+                height: isMobile ? 40 : 36,
+                lineHeight: 1,
+                fontWeight: 600,
+              }}
+              aria-label="Fechar chat e voltar para lista"
+              title="Fechar chat"
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--panel)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--bg)";
+              }}
+            >
+              {isMobile ? "←" : "✕"}
+            </button>
+
+            {/* Info da conversa */}
+            <div style={{ 
+              flex: 1, 
+              display: "flex", 
+              alignItems: "center", 
+              gap: 8,
+              minWidth: 0,
+              overflow: "hidden",
+            }}>
+              <div style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+                <div style={{ 
+                  fontWeight: 600, 
+                  fontSize: isMobile ? 14 : 16,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}>
+                  {(() => {
+                    const thread = threads.find(t => String(t.id) === activeId);
+                    
+                    // Debug: log para ver o que tem no thread
+                    if (thread) {
+                      console.log("[CHAT HEADER] Thread encontrado:", {
+                        id: thread.id,
+                        contact_name: thread.contact_name,
+                        title: thread.title,
+                        metadata: thread.metadata,
+                        external_user_phone: thread.external_user_phone,
+                      });
+                    } else {
+                      console.log("[CHAT HEADER] Thread não encontrado. activeId:", activeId, "Threads:", threads.map(t => ({ id: t.id, contact_name: t.contact_name, title: t.title })));
+                    }
+                    
+                    if (!thread) return "Nova conversa";
+                    
+                    // Prioridade: contact_name > title > metadata.name > metadata.profile_name > número
+                    const name = thread.contact_name || 
+                                 thread.title || 
+                                 (thread.metadata as any)?.name ||
+                                 (thread.metadata as any)?.profile_name;
+                    
+                    console.log("[CHAT HEADER] Nome encontrado:", name);
+                    
+                    if (name && name.trim()) return name.trim();
+                    
+                    // Fallback: mostra últimos 4 dígitos do número
+                    const phone = (thread.metadata as any)?.wa_id || 
+                                 (thread.metadata as any)?.phone || 
+                                 thread.external_user_phone;
+                    if (phone) {
+                      const phoneStr = String(phone).replace(/[^\d]/g, "");
+                      const display = `Contato • ${phoneStr.slice(-4)}`;
+                      console.log("[CHAT HEADER] Usando fallback com telefone:", display);
+                      return display;
+                    }
+                    
+                    console.log("[CHAT HEADER] Usando fallback 'Nova conversa'");
+                    return "Nova conversa";
+                  })()}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+                  {takeoverActive ? "Modo humano ativo" : "Online"}
+                </div>
+              </div>
+            </div>
+
+            {/* Controles */}
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              gap: 8,
+              flexShrink: 0,
+            }}>
+              {/* Lead tag */}
+              <LeadTag level={activeLead.level} score={activeLead.score} />
+            </div>
+          </div>
+
+          {/* Barra de controles (takeover, temperatura) */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: isMobile ? 6 : 8,
+              padding: isMobile ? "6px 10px" : "8px 12px",
+              borderBottom: "1px solid var(--border)",
+              background: "var(--panel)",
+              flexWrap: "wrap",
+              flexShrink: 0,
+              boxSizing: "border-box",
+              fontSize: isMobile ? 11 : 14,
+            }}
+          >
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              gap: isMobile ? 6 : 8,
+              flexWrap: "wrap",
+            }}>
+              <label style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: isMobile ? 4 : 8, 
+                cursor: "pointer", 
+                fontSize: isMobile ? 12 : 14 
+              }}>
+                <input
+                  type="checkbox"
+                  checked={takeoverActive}
+                  onChange={(e) => toggleTakeover(e.target.checked)}
+                  style={{ width: isMobile ? 14 : 16, height: isMobile ? 14 : 16 }}
+                />
+                <span>👤 {isMobile ? "Assumir" : "Assumir conversa"}</span>
+              </label>
+
+              {takeoverActive && (
+                <span className="chip" style={{ 
+                  background: "#1e3a8a", 
+                  color: "white", 
+                  fontSize: isMobile ? 10 : 12,
+                  padding: isMobile ? "2px 6px" : "4px 8px",
+                }}>
+                  {isMobile ? "Humano" : "Modo humano ativo"}
+                </span>
+              )}
+            </div>
+
+            <div style={{ 
+              display: "flex", 
+              alignItems: "center", 
+              gap: isMobile ? 6 : 8,
+            }}>
+              <span style={{ 
+                fontSize: isMobile ? 11 : 12, 
+                color: "var(--muted)",
+                whiteSpace: "nowrap",
+              }}>
+                {isMobile ? "Temp:" : "Temperatura:"}
+              </span>
+              <select
+                className="select select--sm"
+                value={getOverrideLevel(activeId || "") || "auto"}
+                onChange={(e) => {
+                  const v = e.target.value as LeadLevel | "auto";
+                  handleOverride(v === "auto" ? null : (v as LeadLevel));
+                }}
+                style={{ 
+                  fontSize: isMobile ? 12 : 13, 
+                  padding: isMobile ? "4px 8px" : "6px 10px",
+                  minWidth: isMobile ? 80 : 100,
+                  height: isMobile ? 28 : "auto",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  background: "var(--bg)",
+                  color: "var(--text)",
+                }}
+              >
+                <option value="auto">Auto</option>
+                <option value="frio">Frio</option>
+                <option value="morno">Morno</option>
+                <option value="quente">Quente</option>
+              </select>
+              
+              {/* Botão fechar conversa */}
+              <button
+                onClick={() => {
+                  setActiveId(undefined);
+                  if (isMobile) {
+                    setShowSidebar(true);
+                  }
+                }}
+                style={{
+                  padding: isMobile ? "4px 8px" : "6px 10px",
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: isMobile ? 12 : 13,
+                  color: "var(--text)",
+                  flexShrink: 0,
+                  minWidth: isMobile ? 60 : 70,
+                  height: isMobile ? 28 : 32,
+                  lineHeight: 1,
+                  fontWeight: 500,
+                }}
+                aria-label="Fechar chat e voltar para lista"
+                title="Fechar chat"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "var(--panel)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "var(--bg)";
+                }}
+              >
+                {isMobile ? "✕ Sair" : "✕ Fechar"}
+              </button>
+            </div>
+          </div>
+
+          {/* Barra com nome/número do contato */}
+          {(() => {
+            const thread = threads.find(t => String(t.id) === activeId);
+            
+            // Debug
+            console.log("[BARRA CONTATO] Thread encontrado:", thread ? {
+              id: thread.id,
+              contact_name: thread.contact_name,
+              title: thread.title,
+              metadata: thread.metadata,
+              external_user_phone: thread.external_user_phone,
+            } : "Thread não encontrado. activeId:", activeId);
+            
+            if (!thread) return null;
+            
+            const name = thread.contact_name || 
+                        thread.title || 
+                        (thread.metadata as any)?.name ||
+                        (thread.metadata as any)?.profile_name;
+            
+            const phone = (thread.metadata as any)?.wa_id || 
+                         (thread.metadata as any)?.phone || 
+                         thread.external_user_phone;
+            
+            const displayName = name && name.trim() 
+              ? name.trim() 
+              : phone 
+                ? `+${String(phone).replace(/[^\d]/g, "")}` 
+                : "Contato sem nome";
+            
+            console.log("[BARRA CONTATO] Nome:", name, "Phone:", phone, "DisplayName:", displayName);
+            
+            const phoneFormatted = phone 
+              ? String(phone).replace(/[^\d]/g, "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 ($2) $3-$4")
+              : null;
+            
+            return (
+              <div
+                style={{
+                  padding: isMobile ? "8px 10px" : "10px 12px",
+                  borderBottom: "1px solid var(--border)",
+                  background: "var(--bg)",
+                  flexShrink: 0,
+                  boxSizing: "border-box",
+                }}
+              >
+                <div style={{
+                  fontSize: isMobile ? 13 : 14,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}>
+                  <span>👤</span>
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {displayName}
+                  </span>
+                  {phoneFormatted && (
+                    <span style={{
+                      fontSize: isMobile ? 11 : 12,
+                      color: "var(--muted)",
+                      fontWeight: 400,
+                      whiteSpace: "nowrap",
+                    }}>
+                      {phoneFormatted}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Lista de mensagens */}
+          <div
+            ref={listRef}
+            style={{
+              overflowY: "auto",
+              overflowX: "hidden",
+              padding: isMobile ? "8px 6px" : "12px 16px",
+              background: "var(--bg)",
+              minHeight: 0,
+              flex: 1,
+              maxHeight: "100%",
+              boxSizing: "border-box",
+            }}
+          >
           {loadingMessages && (
-            <div className="small" style={{ color: "var(--muted)", padding: 8 }}>
+            <div className="small" style={{ 
+              color: "var(--muted)", 
+              padding: isMobile ? 6 : 8,
+              fontSize: isMobile ? 12 : 13,
+            }}>
               Carregando mensagens...
             </div>
           )}
 
           {!loadingMessages && messages.length === 0 && (
-            <div className="card" style={{ maxWidth: 560, margin: "40px auto", textAlign: "center", padding: 20 }}>
-              <h3 style={{ marginTop: 0 }}>Bem-vindo 👋</h3>
-              <p className="small" style={{ color: "var(--muted)" }}>
+            <div className="card" style={{ 
+              maxWidth: isMobile ? "90%" : 560, 
+              margin: isMobile ? "20px auto" : "40px auto", 
+              textAlign: "center", 
+              padding: isMobile ? 16 : 20 
+            }}>
+              <h3 style={{ marginTop: 0, fontSize: isMobile ? 18 : 20 }}>Bem-vindo 👋</h3>
+              <p className="small" style={{ 
+                color: "var(--muted)",
+                fontSize: isMobile ? 12 : 13,
+              }}>
                 Comece uma conversa enviando uma mensagem abaixo ou crie uma nova conversa.
               </p>
             </div>
           )}
 
-          <div style={{ display: "grid", gap: 10 }}>
-            {messages.map((m) => (
-              <Bubble key={m.id} m={m} />
-            ))}
+          <div style={{ 
+            display: "flex", 
+            flexDirection: "column",
+            gap: isMobile ? 8 : 10,
+            paddingBottom: isMobile ? 8 : 12,
+          }}>
+            {messages.map((m) => {
+              const thread = threads.find(t => String(t.id) === activeId);
+              return <Bubble key={m.id} m={m} isMobile={isMobile} thread={thread} />;
+            })}
 
             {assistantBuffer && (
-              <div className="bubble assistant">
-                <div className="meta">
+              <div 
+                className="bubble assistant"
+                style={{
+                  maxWidth: isMobile ? "85%" : "min(720px, 100%)",
+                  padding: isMobile ? "8px 10px" : "10px 12px",
+                }}
+              >
+                <div className="meta" style={{ 
+                  fontSize: isMobile ? 11 : 12,
+                  marginBottom: isMobile ? 4 : 6,
+                  gap: isMobile ? 6 : 10,
+                }}>
                   <span className="role">Assistente</span>
                   <span className="time">{formatTime(Date.now())}</span>
                 </div>
-                <div className="content">{assistantBuffer}</div>
+                <div className="content" style={{ 
+                  fontSize: isMobile ? 14 : 14,
+                  lineHeight: isMobile ? 1.4 : 1.5,
+                }}>{assistantBuffer}</div>
               </div>
             )}
 
             {!assistantBuffer && !takeoverActive && isTyping && (
-              <div className="bubble assistant">
-                <div className="meta">
+              <div 
+                className="bubble assistant"
+                style={{
+                  maxWidth: isMobile ? "85%" : "min(720px, 100%)",
+                  padding: isMobile ? "8px 10px" : "10px 12px",
+                }}
+              >
+                <div className="meta" style={{ 
+                  fontSize: isMobile ? 11 : 12,
+                  marginBottom: isMobile ? 4 : 6,
+                  gap: isMobile ? 6 : 10,
+                }}>
                   <span className="role">Assistente</span>
                   <span className="time">{formatTime(Date.now())}</span>
                 </div>
@@ -904,11 +1552,11 @@ export default function Chat() {
                 border: "1px solid #7f1d1d",
                 background: "#1b0f10",
                 color: "#fecaca",
-                padding: "10px 12px",
+                padding: isMobile ? "8px 10px" : "10px 12px",
                 borderRadius: 10,
-                fontSize: 14,
-                marginTop: 12,
-                maxWidth: 560,
+                fontSize: isMobile ? 12 : 14,
+                marginTop: isMobile ? 8 : 12,
+                maxWidth: isMobile ? "90%" : 560,
               }}
             >
               {errorMsg}{" "}
@@ -928,15 +1576,38 @@ export default function Chat() {
           )}
         </div>
 
-        {/* Composer */}
-        <Composer
-          value={input}
-          setValue={setInput}
-          onSend={handleSend}
-          disabled={sending}
-          takeoverActive={takeoverActive}
-        />
-      </main>
+          {/* Composer - Só funciona quando takeover está ativo */}
+          <Composer
+            value={input}
+            setValue={setInput}
+            onSend={handleSend}
+            disabled={sending || !takeoverActive}
+            takeoverActive={takeoverActive}
+          />
+        </main>
+      ) : (
+        /* Tela quando nenhuma conversa está selecionada */
+        <div
+          style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "var(--bg)",
+            color: "var(--muted)",
+            textAlign: "center",
+            padding: 40,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 64, marginBottom: 16 }}>💬</div>
+            <h3 style={{ margin: "0 0 8px 0", color: "var(--text)" }}>Selecione uma conversa</h3>
+            <p style={{ margin: 0, fontSize: 14 }}>
+              Escolha uma conversa da lista ao lado para começar a conversar
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

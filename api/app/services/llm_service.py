@@ -136,17 +136,17 @@ FUNCTIONS = [
         "type": "function",
         "function": {
             "name": "get_product_price",
-            "description": "Obtém o preço de um produto, considerando variações se for produto variável. Use quando o cliente perguntar sobre preço.",
+            "description": "Obtém o preço de um produto, considerando variações se for produto variável. IMPORTANTE: SEMPRE use 'lookup_product' ou 'search_products' PRIMEIRO para verificar se o produto existe antes de chamar esta função. Se o produto não existir ou a variação não for encontrada, a função retornará um erro. NUNCA invente preços - sempre verifique se o produto existe no catálogo antes de informar preço ao cliente.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "product_slug": {
                         "type": "string",
-                        "description": "Slug do produto (ex: 'raspadinhas-promocionais')"
+                        "description": "Slug do produto (ex: 'raspadinhas-promocionais'). DEVE ser um slug válido encontrado através de 'lookup_product' ou 'search_products'."
                     },
                     "attributes": {
                         "type": "object",
-                        "description": "Atributos do produto (ex: {'pa_tamanho': '90x50mm', 'pa_quantidade': '1000'})",
+                        "description": "Atributos do produto (ex: {'pa_tamanho': '90x50mm', 'pa_quantidade': '1000'}). Use 'get_product_attributes' para verificar quais atributos são válidos antes de usar.",
                         "additionalProperties": {"type": "string"}
                     }
                 },

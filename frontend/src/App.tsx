@@ -21,17 +21,23 @@ function ThemeInitializer({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <ThemeInitializer>
-      <div className="layout" style={{ minHeight: "100vh", display: "flex", flexDirection: "column" }}>
-        {/* ✅ Header global com navegação */}
-        <HeaderApp />
-
-      {/* ✅ Conteúdo centralizado */}
-      <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
+      <div className="layout" style={{ 
+        minHeight: "100vh", 
+        maxHeight: "100vh",
+        maxWidth: "100vw",
+        width: "100vw",
+        height: "100vh",
+        display: "flex", 
+        flexDirection: "column",
+        overflow: "hidden",
+        boxSizing: "border-box",
+        position: "relative",
+      }}>
         <Routes>
           {/* Login público */}
           <Route path="/login" element={<Login />} />
 
-          {/* Dashboard padrão */}
+          {/* Chat - sem header, layout próprio tipo WhatsApp */}
           <Route
             path="/"
             element={
@@ -51,42 +57,59 @@ export default function App() {
             }
           />
 
-          {/* Contatos */}
+          {/* Outras páginas - com header */}
           <Route
             path="/contacts"
             element={
               <ProtectedRoute>
-                <Contacts />
+                <>
+                  <HeaderApp />
+                  <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
+                    <Contacts />
+                  </div>
+                </>
               </ProtectedRoute>
             }
           />
 
-          {/* Kanban */}
           <Route
             path="/kanban"
             element={
               <ProtectedRoute>
-                <Kanban />
+                <>
+                  <HeaderApp />
+                  <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
+                    <Kanban />
+                  </div>
+                </>
               </ProtectedRoute>
             }
           />
 
-          {/* Tarefas */}
           <Route
             path="/tasks"
             element={
               <ProtectedRoute>
-                <Tasks />
+                <>
+                  <HeaderApp />
+                  <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
+                    <Tasks />
+                  </div>
+                </>
               </ProtectedRoute>
             }
           />
 
-          {/* Perfil / Minha conta */}
           <Route
             path="/profile"
             element={
               <ProtectedRoute>
-                <Profile />
+                <>
+                  <HeaderApp />
+                  <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
+                    <Profile />
+                  </div>
+                </>
               </ProtectedRoute>
             }
           />
@@ -95,7 +118,6 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>
-    </div>
     </ThemeInitializer>
   );
 }

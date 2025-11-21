@@ -169,6 +169,13 @@ export default function Kanban() {
   const [items, setItems] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // Carrega e aplica prioridade: override → backend → heurística
   useEffect(() => {
@@ -307,17 +314,17 @@ export default function Kanban() {
     e.preventDefault();
   }
 
-  function Column({ level, title }: { level: Level; title: string }) {
+  function Column({ level, title, isMobile }: { level: Level; title: string; isMobile?: boolean }) {
     const data = byLevel[level];
     const style = colStyle(level);
 
     const btnBase: React.CSSProperties = {
-      height: 36,
+      height: isMobile ? 32 : 36,
       borderRadius: 6,
       border: "1px solid var(--border)",
       background: "var(--bg)",
       color: "var(--text)",
-      fontSize: 13,
+      fontSize: isMobile ? 12 : 13,
       fontWeight: 500,
       cursor: "pointer",
     };
@@ -330,8 +337,9 @@ export default function Kanban() {
           flexDirection: "column",
           border: `1px solid ${style.badge}`,
           background: "var(--bg)",
-          minHeight: "calc(100vh - 180px)",
-          maxHeight: "calc(100vh - 180px)",
+          minHeight: isMobile ? "auto" : "calc(100vh - 180px)",
+          maxHeight: isMobile ? "calc((100vh - 200px) / 3)" : "calc(100vh - 180px)",
+          width: "100%",
           overflow: "hidden",
         }}
         onDragOver={onDragOver}
@@ -341,7 +349,7 @@ export default function Kanban() {
           style={{
             background: style.header,
             color: "white",
-            padding: "10px 12px",
+            padding: isMobile ? "6px 8px" : "10px 12px",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -349,21 +357,27 @@ export default function Kanban() {
             borderTopRightRadius: 10,
           }}
         >
-          <strong>{title}</strong>
+          <strong style={{ fontSize: isMobile ? 13 : 14 }}>{title}</strong>
           <span
             style={{
               background: style.badge,
               color: "white",
               borderRadius: 20,
               padding: "2px 10px",
-              fontSize: 12,
+              fontSize: isMobile ? 11 : 12,
             }}
           >
             {data.length}
           </span>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: 10, display: "grid", gap: 10 }}>
+        <div style={{ 
+          flex: 1, 
+          overflowY: "auto", 
+          padding: isMobile ? 6 : 10, 
+          display: "grid", 
+          gap: isMobile ? 6 : 10 
+        }}>
           {data.map((t) => {
             const targets: Level[] =
               level === "frio" ? ["morno", "quente"] : level === "morno" ? ["frio", "quente"] : ["frio", "morno"]; // quente
@@ -377,11 +391,11 @@ export default function Kanban() {
                   border: "1px dashed var(--border)",
                   borderRadius: 8,
                   background: "var(--panel)",
-                  padding: 10,
+                  padding: isMobile ? 6 : 10,
                   display: "flex",
                   flexDirection: "column",
-                  gap: 6,
-                  height: CARD_HEIGHT,
+                  gap: isMobile ? 4 : 6,
+                  height: isMobile ? CARD_HEIGHT - 60 : CARD_HEIGHT,
                   boxSizing: "border-box",
                   overflow: "hidden",
                 }}
@@ -486,32 +500,63 @@ export default function Kanban() {
   }
 
   return (
-    <div style={{ height: "calc(100vh - 56px)", display: "grid", gridTemplateRows: "auto 1fr" }}>
+    <div style={{ 
+      height: "calc(100vh - 56px)", 
+      maxHeight: "calc(100vh - 56px)",
+      display: "grid", 
+      gridTemplateRows: "auto 1fr",
+      overflow: "hidden",
+    }}>
       <div
         style={{
           display: "flex",
-          gap: 8,
+          gap: isMobile ? 6 : 8,
           alignItems: "center",
-          padding: "10px 12px",
+          padding: isMobile ? "8px 10px" : "10px 12px",
           borderBottom: "1px solid var(--border)",
           background: "var(--panel)",
+          flexWrap: isMobile ? "wrap" : "nowrap",
         }}
       >
         <input
           className="input"
-          placeholder="Buscar lead (nome, número, mensagem)..."
+          placeholder={isMobile ? "Buscar lead..." : "Buscar lead (nome, número, mensagem)..."}
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          style={{ maxWidth: 360 }}
+          style={{ 
+            maxWidth: isMobile ? "100%" : 360,
+            fontSize: isMobile ? 14 : 16,
+            flex: isMobile ? 1 : "auto",
+          }}
         />
-        <div className="small" style={{ marginLeft: "auto", color: "var(--muted)" }}>{filtered.length} lead(s)</div>
+        <div 
+          className="small" 
+          style={{ 
+            marginLeft: isMobile ? 0 : "auto", 
+            color: "var(--muted)",
+            fontSize: isMobile ? 11 : 12,
+            width: isMobile ? "100%" : "auto",
+            marginTop: isMobile ? 4 : 0,
+          }}
+        >
+          {filtered.length} lead(s)
+        </div>
       </div>
 
-      <div style={{ padding: 12 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, height: "100%" }}>
-          <Column level="frio" title="Frio" />
-          <Column level="morno" title="Morno" />
-          <Column level="quente" title="Quente" />
+      <div style={{ 
+        padding: isMobile ? 6 : 12,
+        overflow: isMobile ? "hidden" : "hidden",
+      }}>
+        <div style={{ 
+          display: isMobile ? "flex" : "grid", 
+          gridTemplateColumns: isMobile ? "none" : "repeat(3, 1fr)",
+          flexDirection: isMobile ? "column" : "row",
+          gap: isMobile ? 8 : 12, 
+          height: isMobile ? "100%" : "100%",
+        }}>
+          <Column level="frio" title="Frio" isMobile={isMobile} />
+          <Column level="morno" title="Morno" isMobile={isMobile} />
+          <Column level="quente" title="Quente" isMobile={isMobile} />
         </div>
       </div>
       {loading && <div className="small" style={{ padding: 8, color: "var(--muted)" }}>Carregando…</div>}

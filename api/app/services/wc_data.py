@@ -280,11 +280,15 @@ def get_product_price(product_slug: str, attributes: Optional[Dict[str, str]] = 
         attributes: Dicionário com atributos (ex: {"pa_tamanho": "90x50mm", "pa_quantidade": "1000"})
         
     Returns:
-        Dicionário com informações de preço ou None
+        Dicionário com informações de preço ou None se produto não existir
     """
     product = lookup_product(product_slug)
     if not product:
-        return None
+        return {
+            "error": "Produto não encontrado",
+            "message": f"O produto '{product_slug}' não foi encontrado no catálogo. Verifique se o slug está correto ou use 'lookup_product' ou 'search_products' para encontrar produtos disponíveis.",
+            "product_slug": product_slug
+        }
     
     # Produto simples
     if product.get("type") == "simple":
@@ -333,28 +337,27 @@ def get_product_price(product_slug: str, attributes: Optional[Dict[str, str]] = 
                     "attributes": var_attrs
                 }
         
-        # Se não encontrou variação exata, retorna preço base do produto
-        price_info = product.get("price_info", {})
+        # Se não encontrou variação exata, retorna aviso
         return {
             "product_name": product.get("name"),
             "product_slug": product.get("slug"),
             "type": "variable",
-            "price": price_info.get("price"),
-            "regular_price": price_info.get("regular_price"),
-            "note": "Preço base do produto. Preço final varia conforme atributos selecionados.",
-            "link": product.get("permalink", "")
+            "error": "Variação não encontrada",
+            "message": f"A combinação de atributos especificada não foi encontrada para este produto. Use 'get_product_attributes' para ver quais atributos e valores são válidos.",
+            "attributes_requested": attributes,
+            "link": product.get("permalink", ""),
+            "note": "Este produto tem variações. O preço depende dos atributos selecionados. Verifique os atributos disponíveis antes de informar o preço."
         }
     
-    # Produto variável sem atributos - retorna preço base
-    price_info = product.get("price_info", {})
+    # Produto variável sem atributos - não pode dar preço exato
     return {
         "product_name": product.get("name"),
         "product_slug": product.get("slug"),
         "type": "variable",
-        "price": price_info.get("price"),
-        "regular_price": price_info.get("regular_price"),
-        "note": "Este produto tem variações. O preço depende dos atributos selecionados.",
-        "link": product.get("permalink", "")
+        "error": "Atributos necessários",
+        "message": "Este produto tem variações e requer atributos para calcular o preço. Use 'get_product_attributes' para ver quais atributos são necessários.",
+        "link": product.get("permalink", ""),
+        "note": "Este produto tem variações. O preço depende dos atributos selecionados. Não é possível informar o preço sem os atributos específicos."
     }
 
 

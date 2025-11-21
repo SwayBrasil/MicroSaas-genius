@@ -41,6 +41,13 @@ export default function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("open");
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // form
   const [title, setTitle] = useState("");
@@ -168,10 +175,28 @@ export default function Tasks() {
 
   function QuickDue() {
     return (
-      <div style={{ display: "flex", gap: 6 }}>
-        <button className="btn soft" onClick={() => setDue(todayISO())}>Hoje</button>
-        <button className="btn soft" onClick={() => setDue(toISODate(new Date(Date.now() + 86400000)))}>Amanhã</button>
-        <button className="btn soft" onClick={() => setDue("")}>Sem prazo</button>
+      <div style={{ display: "flex", gap: isMobile ? 4 : 6, flexWrap: "wrap" }}>
+        <button 
+          className="btn soft" 
+          onClick={() => setDue(todayISO())}
+          style={{ fontSize: isMobile ? 12 : 13, padding: isMobile ? "4px 8px" : "6px 10px" }}
+        >
+          Hoje
+        </button>
+        <button 
+          className="btn soft" 
+          onClick={() => setDue(toISODate(new Date(Date.now() + 86400000)))}
+          style={{ fontSize: isMobile ? 12 : 13, padding: isMobile ? "4px 8px" : "6px 10px" }}
+        >
+          Amanhã
+        </button>
+        <button 
+          className="btn soft" 
+          onClick={() => setDue("")}
+          style={{ fontSize: isMobile ? 12 : 13, padding: isMobile ? "4px 8px" : "6px 10px" }}
+        >
+          Sem prazo
+        </button>
       </div>
     );
   }
@@ -201,12 +226,12 @@ export default function Tasks() {
       <div
         className="card"
         style={{
-          padding: 12,
+          padding: isMobile ? 8 : 12,
           display: "grid",
-          gridTemplateColumns: "1fr auto",
-          gap: 8,
+          gridTemplateColumns: isMobile ? "1fr" : "1fr auto",
+          gap: isMobile ? 6 : 8,
           alignItems: "center",
-          minHeight: TASK_ITEM_MIN_H,
+          minHeight: isMobile ? TASK_ITEM_MIN_H - 20 : TASK_ITEM_MIN_H,
         }}
       >
         <div style={{ minWidth: 0 }}>
@@ -279,16 +304,46 @@ export default function Tasks() {
           )}
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignContent: "center" }}>
+        <div style={{ 
+          display: "flex", 
+          gap: isMobile ? 6 : 8, 
+          flexWrap: "wrap", 
+          alignContent: "center",
+          justifyContent: isMobile ? "flex-start" : "flex-end",
+        }}>
           {!isEditing ? (
             <>
-              <button className="btn soft" onClick={() => startEdit(t)}>Editar</button>
-              <button className="btn soft danger" onClick={() => remove(t)}>Excluir</button>
+              <button 
+                className="btn soft" 
+                onClick={() => startEdit(t)}
+                style={{ fontSize: isMobile ? 12 : 13, padding: isMobile ? "6px 10px" : "8px 12px" }}
+              >
+                Editar
+              </button>
+              <button 
+                className="btn soft danger" 
+                onClick={() => remove(t)}
+                style={{ fontSize: isMobile ? 12 : 13, padding: isMobile ? "6px 10px" : "8px 12px" }}
+              >
+                Excluir
+              </button>
             </>
           ) : (
             <>
-              <button className="btn" onClick={() => saveEdit(t)}>Salvar</button>
-              <button className="btn soft" onClick={cancelEdit}>Cancelar</button>
+              <button 
+                className="btn" 
+                onClick={() => saveEdit(t)}
+                style={{ fontSize: isMobile ? 12 : 13, padding: isMobile ? "6px 10px" : "8px 12px" }}
+              >
+                Salvar
+              </button>
+              <button 
+                className="btn soft" 
+                onClick={cancelEdit}
+                style={{ fontSize: isMobile ? 12 : 13, padding: isMobile ? "6px 10px" : "8px 12px" }}
+              >
+                Cancelar
+              </button>
             </>
           )}
         </div>
@@ -297,13 +352,34 @@ export default function Tasks() {
   }
 
   return (
-    <div style={{ height: "calc(100vh - 56px)", display: "grid", gridTemplateRows: "auto auto 1fr" }}>
+    <div style={{ 
+      height: "calc(100vh - 56px)", 
+      maxHeight: "calc(100vh - 56px)",
+      display: "grid", 
+      gridTemplateRows: "auto auto 1fr",
+      overflow: "hidden",
+    }}>
       {/* Topbar */}
-      <div style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)", padding: "10px 12px", display: "flex", gap: 8, alignItems: "center" }}>
-        <strong style={{ fontSize: 16 }}>Tarefas</strong>
-        <span className="chip">Abertas: {open.length}</span>
-        <span className="chip soft">Concluídas: {done.length}</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+      <div style={{ 
+        borderBottom: "1px solid var(--border)", 
+        background: "var(--panel)", 
+        padding: isMobile ? "8px 10px" : "10px 12px", 
+        display: "flex", 
+        gap: isMobile ? 6 : 8, 
+        alignItems: "center",
+        flexWrap: isMobile ? "wrap" : "nowrap",
+      }}>
+        <strong style={{ fontSize: isMobile ? 14 : 16 }}>Tarefas</strong>
+        <span className="chip" style={{ fontSize: isMobile ? 11 : 12 }}>Abertas: {open.length}</span>
+        <span className="chip soft" style={{ fontSize: isMobile ? 11 : 12 }}>Concluídas: {done.length}</span>
+        <div style={{ 
+          marginLeft: isMobile ? 0 : "auto", 
+          display: "flex", 
+          gap: isMobile ? 4 : 6,
+          flexWrap: "wrap",
+          width: isMobile ? "100%" : "auto",
+          marginTop: isMobile ? 4 : 0,
+        }}>
           <FilterPill v="open" label="Abertas" />
           <FilterPill v="today" label="Hoje" />
           <FilterPill v="all" label="Todas" />
@@ -312,23 +388,55 @@ export default function Tasks() {
       </div>
 
       {/* Composer */}
-      <div style={{ borderBottom: "1px solid var(--border)", background: "var(--panel)", padding: 12, display: "grid", gap: 8 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+      <div style={{ 
+        borderBottom: "1px solid var(--border)", 
+        background: "var(--panel)", 
+        padding: isMobile ? 8 : 12, 
+        display: "grid", 
+        gap: isMobile ? 6 : 8,
+        overflow: "auto",
+      }}>
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: isMobile ? "1fr" : "1fr auto", 
+          gap: isMobile ? 6 : 8 
+        }}>
           <input
             ref={inputRef}
             className="input"
-            placeholder="Adicionar tarefa… (Enter para salvar)"
+            placeholder={isMobile ? "Nova tarefa…" : "Adicionar tarefa… (Enter para salvar)"}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={onFormKeyDown}
+            style={{ fontSize: isMobile ? 14 : 16 }}
           />
-          <button className="btn" onClick={add}>Adicionar</button>
+          <button className="btn" onClick={add} style={{ fontSize: isMobile ? 13 : 14 }}>
+            {isMobile ? "+" : "Adicionar"}
+          </button>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} style={{ width: 180 }} />
+        <div style={{ 
+          display: "flex", 
+          gap: isMobile ? 6 : 10, 
+          alignItems: "center", 
+          flexWrap: "wrap" 
+        }}>
+          <input 
+            className="input" 
+            type="date" 
+            value={due} 
+            onChange={(e) => setDue(e.target.value)} 
+            style={{ 
+              width: isMobile ? "100%" : 180,
+              fontSize: isMobile ? 13 : 14,
+            }} 
+          />
           <QuickDue />
-          <button className="btn soft" onClick={() => setShowNotes((s) => !s)}>
-            {showNotes ? "Esconder notas" : "Adicionar notas"}
+          <button 
+            className="btn soft" 
+            onClick={() => setShowNotes((s) => !s)}
+            style={{ fontSize: isMobile ? 12 : 14 }}
+          >
+            {showNotes ? (isMobile ? "Ocultar" : "Esconder notas") : (isMobile ? "Notas" : "Adicionar notas")}
           </button>
           {showNotes && (
             <input
@@ -337,7 +445,11 @@ export default function Tasks() {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               onKeyDown={onFormKeyDown}
-              style={{ minWidth: 260, flex: 1 }}
+              style={{ 
+                minWidth: isMobile ? "100%" : 260, 
+                flex: 1,
+                fontSize: isMobile ? 13 : 14,
+              }}
             />
           )}
         </div>
@@ -346,12 +458,12 @@ export default function Tasks() {
       {/* Lista (altura uniforme) */}
       <div
         style={{
-          padding: 12,
+          padding: isMobile ? 8 : 12,
           overflow: "auto",
           display: "grid",
-          gap: 8,
-          alignContent: "start",                          // não estica linhas
-          gridAutoRows: `minmax(${TASK_ITEM_MIN_H}px, auto)`, // mesma altura mínima
+          gap: isMobile ? 6 : 8,
+          alignContent: "start",
+          gridAutoRows: `minmax(${isMobile ? TASK_ITEM_MIN_H - 20 : TASK_ITEM_MIN_H}px, auto)`,
         }}
       >
         {loading && <div className="small">Carregando…</div>}

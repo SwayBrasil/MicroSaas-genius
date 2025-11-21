@@ -529,14 +529,38 @@ def seed_user_and_migrate():
         _fix_contacts_table(db)  # Garante que contacts tenha todas as colunas
         _update_existing_contacts(db)  # Atualiza contatos existentes
         
-        # seed
-        exists = db.execute(
+        # seed - cria usuário Admin se não existir
+        admin_user = db.execute(
+            select(User).where(User.email == "Admin")
+        ).scalar_one_or_none()
+        if not admin_user:
+            admin_user = User(email="Admin", password_hash=hash_password("Admin"))
+            db.add(admin_user)
+            db.commit()
+            db.refresh(admin_user)
+        
+        # Migra threads do usuário antigo (dev@local.com) para Admin
+        old_user = db.execute(
             select(User).where(User.email == "dev@local.com")
         ).scalar_one_or_none()
-        if not exists:
-            u = User(email="dev@local.com", password_hash=hash_password("123"))
-            db.add(u)
-            db.commit()
+        
+        if old_user and old_user.id != admin_user.id:
+            # Migra threads
+            threads_to_migrate = db.query(Thread).filter(Thread.user_id == old_user.id).all()
+            if threads_to_migrate:
+                for thread in threads_to_migrate:
+                    thread.user_id = admin_user.id
+                db.commit()
+                print(f"✅ Migradas {len(threads_to_migrate)} threads de {old_user.email} para Admin")
+            
+            # Migra contacts
+            contacts_to_migrate = db.query(Contact).filter(Contact.user_id == old_user.id).all()
+            if contacts_to_migrate:
+                for contact in contacts_to_migrate:
+                    contact.user_id = admin_user.id
+                db.commit()
+                print(f"✅ Migrados {len(contacts_to_migrate)} contatos de {old_user.email} para Admin")
+        
         # migração leve
         _fix_threads_meta(db)
     finally:
@@ -796,7 +820,7 @@ async def stream_thread(
 
     user = _user_from_query_token(db, token)
     t = db.get(Thread, thread_id)
-    if not t or t.user_id != user.id:
+    if not t:
         raise HTTPException(404, "Thread not found")
 
     q = await _subscribe(thread_id)
@@ -832,10 +856,10 @@ def list_threads(
     db: Session = Depends(get_db),
 ):
     from sqlalchemy.orm import joinedload
+    # Retorna todas as conversas para todos os usuários (compartilhadas)
     rows = (
         db.query(Thread)
         .options(joinedload(Thread.contact))  # Carrega o contato junto
-        .where(Thread.user_id == user.id)
         .order_by(Thread.id.desc())
         .all()
     )
@@ -849,10 +873,11 @@ def get_thread(
     db: Session = Depends(get_db),
 ):
     from sqlalchemy.orm import joinedload
+    # Permite acesso a qualquer thread (compartilhada)
     t = (
         db.query(Thread)
         .options(joinedload(Thread.contact))
-        .filter(Thread.id == thread_id, Thread.user_id == user.id)
+        .filter(Thread.id == thread_id)
         .first()
     )
     if not t:
@@ -879,10 +904,11 @@ def update_thread_endpoint(
     db: Session = Depends(get_db),
 ):
     from sqlalchemy.orm import joinedload
+    # Permite acesso a qualquer thread (compartilhada)
     t = (
         db.query(Thread)
         .options(joinedload(Thread.contact))
-        .filter(Thread.id == thread_id, Thread.user_id == user.id)
+        .filter(Thread.id == thread_id)
         .first()
     )
     if not t:
@@ -911,7 +937,7 @@ def delete_thread(
     thread_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     t = db.get(Thread, thread_id)
-    if not t or t.user_id != user.id:
+    if not t:
         raise HTTPException(404, "Thread not found")
     db.query(Message).filter(Message.thread_id == thread_id).delete()
     db.delete(t)
@@ -926,7 +952,7 @@ def get_messages(
     thread_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     t = db.get(Thread, thread_id)
-    if not t or t.user_id != user.id:
+    if not t:
         raise HTTPException(404, "Thread not found")
     msgs = (
         db.query(Message)
@@ -952,7 +978,7 @@ async def send_message(
     db: Session = Depends(get_db),
 ):
     t = db.get(Thread, thread_id)
-    if not t or t.user_id != user.id:
+    if not t:
         raise HTTPException(404, "Thread not found")
 
     m_user = Message(thread_id=thread_id, role="user", content=body.content)
@@ -1066,10 +1092,10 @@ async def meta_webhook(req: Request, db: Session = Depends(get_db)):
     except Exception:
         return {"status": "ignored"}
 
-    owner_email = os.getenv("INBOX_OWNER_EMAIL", "dev@local.com")
+    owner_email = os.getenv("INBOX_OWNER_EMAIL", "Admin")
     owner = db.query(User).filter(User.email == owner_email).first()
     if not owner:
-        owner = User(email=owner_email, password_hash=hash_password("123"))
+        owner = User(email=owner_email, password_hash=hash_password("Admin"))
         db.add(owner)
         db.commit()
         db.refresh(owner)
@@ -1206,10 +1232,10 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         logger.error(f"[WEBHOOK-TWILIO] Error parsing webhook: {str(e)}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
-    owner_email = os.getenv("INBOX_OWNER_EMAIL", "dev@local.com")
+    owner_email = os.getenv("INBOX_OWNER_EMAIL", "Admin")
     owner = db.query(User).filter(User.email == owner_email).first()
     if not owner:
-        owner = User(email=owner_email, password_hash=hash_password("123"))
+        owner = User(email=owner_email, password_hash=hash_password("Admin"))
         db.add(owner)
         db.commit()
         db.refresh(owner)
@@ -1401,14 +1427,13 @@ from datetime import timezone, datetime
 
 @app.get("/stats")
 def stats(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Total de threads do usuário
+    # Total de threads (todas, compartilhadas)
     threads_count = (
         db.query(func.count(Thread.id))
-        .filter(Thread.user_id == user.id)
         .scalar()
     ) or 0
 
-    # Contagem de mensagens por role
+    # Contagem de mensagens por role (todas)
     q_msgs = (
         db.query(
             func.sum(case((Message.role == "user", 1), else_=0)),
@@ -1416,25 +1441,23 @@ def stats(user: User = Depends(get_current_user), db: Session = Depends(get_db))
             func.count(Message.id),
         )
         .join(Thread, Thread.id == Message.thread_id)
-        .filter(Thread.user_id == user.id)
     )
     user_msgs, assistant_msgs, total_msgs = q_msgs.one() if q_msgs else (0, 0, 0)
     user_msgs = int(user_msgs or 0)
     assistant_msgs = int(assistant_msgs or 0)
     total_msgs = int(total_msgs or 0)
 
-    # Última atividade real
+    # Última atividade real (todas)
     last_msg = (
         db.query(Message.created_at)
         .join(Thread, Thread.id == Message.thread_id)
-        .filter(Thread.user_id == user.id)
         .order_by(Message.id.desc())
         .first()
     )
     last_activity = last_msg[0] if last_msg else None
 
     # ------- Mensagens por dia (reais) -------
-    # agrupa created_at por dia, separando user x assistant
+    # agrupa created_at por dia, separando user x assistant (todas)
     rows_day = (
         db.query(
             func.date_trunc("day", Message.created_at).label("day"),
@@ -1442,7 +1465,6 @@ def stats(user: User = Depends(get_current_user), db: Session = Depends(get_db))
             func.sum(case((Message.role == "assistant", 1), else_=0)).label("assistant"),
         )
         .join(Thread, Thread.id == Message.thread_id)
-        .filter(Thread.user_id == user.id)
         .group_by(func.date_trunc("day", Message.created_at))
         .order_by(func.date_trunc("day", Message.created_at).asc())
         .all()
@@ -1467,7 +1489,6 @@ def stats(user: User = Depends(get_current_user), db: Session = Depends(get_db))
     msgs_all = (
         db.query(Message.thread_id, Message.role, Message.created_at)
         .join(Thread, Thread.id == Message.thread_id)
-        .filter(Thread.user_id == user.id)
         .order_by(Message.thread_id.asc(), Message.id.asc())
         .all()
     )
@@ -1517,8 +1538,8 @@ async def ws_thread(
         user = _user_from_query_token(db, token)
         # Verify thread belongs to user
         t = db.get(Thread, int(thread_id))
-        if not t or t.user_id != user.id:
-            await websocket.close(code=1008, reason="Thread not found or access denied")
+        if not t:
+            await websocket.close(code=1008, reason="Thread not found")
             return
     except Exception:
         await websocket.close(code=1008, reason="Invalid token")

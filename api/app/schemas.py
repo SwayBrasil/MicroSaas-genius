@@ -2,13 +2,13 @@
 from datetime import datetime
 from typing import Optional, Any, Dict
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from pydantic import ConfigDict
 
 
 # ================== Auth ==================
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str  # Changed from EmailStr to allow username-based login
     password: str
 
 

@@ -69,6 +69,13 @@ export default function Contacts() {
   const [origin, setOrigin] = useState<string>("");
   const [level, setLevel] = useState<"todos" | "frio" | "morno" | "quente">("todos");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "ultimo", dir: "desc" });
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   /** Carrega threads + enriquece com telefone e temperatura (OTIMIZADO: usa last_message do backend) */
   useEffect(() => {
@@ -237,26 +244,45 @@ export default function Contacts() {
   }
 
   return (
-    <div style={{ height: "calc(100vh - 56px)", display: "grid", gridTemplateRows: "auto 1fr" }}>
+    <div style={{ 
+      height: "calc(100vh - 56px)", 
+      maxHeight: "calc(100vh - 56px)",
+      display: "grid", 
+      gridTemplateRows: "auto 1fr",
+      overflow: "hidden",
+    }}>
       {/* Filtros */}
       <div
         style={{
           display: "flex",
-          gap: 8,
+          gap: isMobile ? 6 : 8,
           alignItems: "center",
-          padding: "10px 12px",
+          padding: isMobile ? "8px 10px" : "10px 12px",
           borderBottom: "1px solid var(--border)",
           background: "var(--panel)",
+          flexWrap: isMobile ? "wrap" : "nowrap",
         }}
       >
         <input
           className="input"
-          placeholder="Buscar (nome, número, mensagem)..."
+          placeholder={isMobile ? "Buscar..." : "Buscar (nome, número, mensagem)..."}
           value={q}
           onChange={e => setQ(e.target.value)}
-          style={{ maxWidth: 360 }}
+          style={{ 
+            maxWidth: isMobile ? "100%" : 360,
+            fontSize: isMobile ? 14 : 16,
+            flex: isMobile ? "1 1 100%" : "auto",
+          }}
         />
-        <select className="select select--sm" value={origin} onChange={e => setOrigin(e.target.value)}>
+        <select 
+          className="select select--sm" 
+          value={origin} 
+          onChange={e => setOrigin(e.target.value)}
+          style={{ 
+            fontSize: isMobile ? 13 : 14,
+            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
+          }}
+        >
           <option value="">Todas as origens</option>
           {[...new Set(origins)].map(o => (
             <option key={o} value={o}>
@@ -264,20 +290,34 @@ export default function Contacts() {
             </option>
           ))}
         </select>
-        <select className="select select--sm" value={level} onChange={e => setLevel(e.target.value as any)}>
+        <select 
+          className="select select--sm" 
+          value={level} 
+          onChange={e => setLevel(e.target.value as any)}
+          style={{ 
+            fontSize: isMobile ? 13 : 14,
+            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
+          }}
+        >
           <option value="todos">Todas as temperaturas</option>
           <option value="frio">Frio</option>
           <option value="morno">Morno</option>
           <option value="quente">Quente</option>
         </select>
-        <div style={{ marginLeft: "auto", color: "var(--muted)" }} className="small">
+        <div style={{ 
+          marginLeft: isMobile ? 0 : "auto", 
+          color: "var(--muted)",
+          width: isMobile ? "100%" : "auto",
+          marginTop: isMobile ? 4 : 0,
+        }} className="small">
           {sorted.length} contato(s)
         </div>
       </div>
 
-      {/* Tabela */}
-      <div style={{ overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
+      {/* Tabela (desktop) ou Cards (mobile) */}
+      {!isMobile ? (
+        <div style={{ overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
           <thead style={{ position: "sticky", top: 0, background: "var(--panel)", zIndex: 1 }}>
             <tr>
               <th style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
@@ -395,6 +435,103 @@ export default function Contacts() {
           </tbody>
         </table>
       </div>
+      ) : (
+        /* Cards (mobile) */
+        <div style={{ overflow: "auto", padding: 8 }}>
+          {loading && (
+            <div className="small" style={{ padding: 12, color: "var(--muted)" }}>
+              Carregando…
+            </div>
+          )}
+          {!loading && sorted.length === 0 && (
+            <div className="card" style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
+              <div className="small">Nenhum contato encontrado.</div>
+            </div>
+          )}
+          {sorted.map(t => {
+            const effLevel = t._level && t._level !== "desconhecido" ? t._level : (t.lead_level || "frio");
+            const effScore = typeof t._score === "number" ? t._score : ((t as any).lead_score as number | undefined);
+            return (
+              <div key={t.id} className="card" style={{ padding: 12, marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ 
+                      fontWeight: 600, 
+                      fontSize: 14,
+                      marginBottom: 4,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {getDisplayName(t)}
+                    </div>
+                    <code style={{ fontSize: 12, color: "var(--muted)" }}>{t._phone || "—"}</code>
+                  </div>
+                  <LeadTag level={effLevel} score={effScore} />
+                </div>
+                
+                <div style={{ marginBottom: 8 }}>
+                  <select
+                    className="select select--sm"
+                    value={t.origin || ""}
+                    onChange={e => handleChangeOrigin(t, e.target.value)}
+                    style={{ width: "100%", fontSize: 13 }}
+                  >
+                    <option value="">Sem origem</option>
+                    <option value="whatsapp_organico">WhatsApp (orgânico)</option>
+                    <option value="meta_ads">Campanha (Meta)</option>
+                    <option value="qr_code">QR Code</option>
+                    <option value="site">Site</option>
+                    <option value="indicacao">Indicação</option>
+                  </select>
+                </div>
+
+                {t._lastText && (
+                  <div style={{ 
+                    fontSize: 12, 
+                    color: "var(--muted)", 
+                    marginBottom: 8,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {t._lastText}
+                  </div>
+                )}
+
+                <div style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between", 
+                  alignItems: "center",
+                  marginBottom: 8,
+                  fontSize: 11,
+                  color: "var(--muted)",
+                }}>
+                  <span>Último: {fmtTimeShort(t._lastAt)}</span>
+                  {typeof effScore === "number" && <span>Score: {effScore}</span>}
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Link 
+                    to={`/contacts/${t.id}`} 
+                    className="btn soft" 
+                    style={{ fontSize: 12, padding: "6px 12px", flex: 1 }}
+                  >
+                    CRM
+                  </Link>
+                  <a 
+                    className="btn soft" 
+                    href={`/#/chat?thread=${t.id}`} 
+                    style={{ fontSize: 12, padding: "6px 12px", flex: 1 }}
+                  >
+                    Chat
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

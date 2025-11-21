@@ -23,7 +23,7 @@ def _get_or_create_contact(thread_id: int, user_id: int, db: Session) -> Contact
     contact = db.query(Contact).filter(Contact.thread_id == thread_id).first()
     if not contact:
         thread = db.get(Thread, thread_id)
-        if not thread or thread.user_id != user_id:
+        if not thread:
             raise HTTPException(404, "Thread not found")
         
         # Extrai dados básicos da thread
@@ -56,7 +56,8 @@ def list_contacts(
     db: Session = Depends(get_db)
 ):
     """Lista todos os contatos do usuário"""
-    contacts = db.query(Contact).filter(Contact.user_id == user.id).order_by(desc(Contact.last_interaction_at)).all()
+    # Retorna todos os contatos (compartilhados)
+    contacts = db.query(Contact).order_by(desc(Contact.last_interaction_at)).all()
     return contacts
 
 
@@ -68,7 +69,7 @@ def get_contact(
 ):
     """Obtém detalhes de um contato"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     return contact
 
@@ -81,7 +82,7 @@ def create_contact(
 ):
     """Cria um novo contato"""
     thread = db.get(Thread, payload.thread_id)
-    if not thread or thread.user_id != user.id:
+    if not thread:
         raise HTTPException(404, "Thread not found")
     
     # Verifica se já existe
@@ -112,7 +113,7 @@ def update_contact(
 ):
     """Atualiza dados do contato"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     if payload.name is not None:
@@ -139,7 +140,7 @@ def add_tag(
 ):
     """Adiciona tag ao contato"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     # Verifica se já existe
@@ -166,7 +167,7 @@ def remove_tag(
 ):
     """Remove tag do contato"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     tag = db.get(ContactTag, tag_id)
@@ -188,7 +189,7 @@ def add_note(
 ):
     """Adiciona nota ao contato"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     note = ContactNote(
@@ -211,7 +212,7 @@ def delete_note(
 ):
     """Remove nota do contato"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     note = db.get(ContactNote, note_id)
@@ -233,7 +234,7 @@ def create_reminder(
 ):
     """Cria lembrete de follow-up"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     reminder = ContactReminder(
@@ -258,7 +259,7 @@ def update_reminder(
 ):
     """Atualiza lembrete (marca como completo)"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     reminder = db.get(ContactReminder, reminder_id)
@@ -281,7 +282,7 @@ def list_reminders(
 ):
     """Lista lembretes do contato"""
     contact = db.get(Contact, contact_id)
-    if not contact or contact.user_id != user.id:
+    if not contact:
         raise HTTPException(404, "Contact not found")
     
     return contact.reminders
