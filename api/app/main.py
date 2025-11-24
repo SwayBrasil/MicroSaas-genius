@@ -1319,7 +1319,25 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
                 break
         
         if not t:
-            logger.warning(f"[WEBHOOK-TWILIO] ⚠️ Nenhuma thread encontrada para número '{from_}' (normalizado de '{from_raw}'). Criando nova thread.")
+            logger.warning(f"[WEBHOOK-TWILIO] ⚠️ Nenhuma thread encontrada para número '{from_}' (normalizado de '{from_raw}').")
+            # Última tentativa: busca em TODAS as threads (caso tenha havido migração de usuário)
+            logger.info(f"[WEBHOOK-TWILIO] Buscando em TODAS as threads (última tentativa)...")
+            all_threads_global = (
+                db.query(Thread)
+                .filter(Thread.external_user_phone.isnot(None))
+                .all()
+            )
+            for thread in all_threads_global:
+                if thread.external_user_phone and _normalize_phone(thread.external_user_phone) == from_:
+                    logger.warning(f"[WEBHOOK-TWILIO] ⚠️ Thread encontrada em OUTRO usuário! ID={thread.id}, user_id={thread.user_id}, migrando para user_id={owner.id}")
+                    # Migra a thread para o usuário atual
+                    thread.user_id = owner.id
+                    if thread.external_user_phone != from_:
+                        thread.external_user_phone = from_
+                    db.commit()
+                    db.refresh(thread)
+                    t = thread
+                    break
     else:
         logger.info(f"[WEBHOOK-TWILIO] ✅ Thread encontrada por busca exata: ID={t.id}, número='{from_}'")
     
@@ -1335,6 +1353,7 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
     if not t:
         # Usa o nome do perfil se disponível, senão usa o padrão
         title = profile_name if profile_name else f"WhatsApp {from_[-4:]}"
+        logger.warning(f"[WEBHOOK-TWILIO] ⚠️⚠️⚠️ Criando NOVA thread: título='{title}', número='{from_}' (normalizado de '{from_raw}')")
         t = Thread(
             user_id=owner.id, 
             title=title, 
@@ -1344,6 +1363,7 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         db.add(t)
         db.commit()
         db.refresh(t)
+        logger.warning(f"[WEBHOOK-TWILIO] ⚠️⚠️⚠️ Nova thread criada: ID={t.id}")
     else:
         # Atualiza o metadata e título se tiver nome do perfil
         if profile_name:
