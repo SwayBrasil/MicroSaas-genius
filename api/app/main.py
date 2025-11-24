@@ -1282,8 +1282,8 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(owner)
 
-    # Busca thread existente - normaliza o número do banco também para comparação
-    # Busca por número exato primeiro
+    # Busca thread existente - SEMPRE normaliza os números do banco para comparação
+    # Busca por número exato primeiro (caso já esteja normalizado)
     t = (
         db.query(Thread)
         .filter(Thread.user_id == owner.id, Thread.external_user_phone == from_)
@@ -1291,24 +1291,37 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         .first()
     )
     
-    # Se não encontrou, tenta buscar normalizando os números do banco
+    # Se não encontrou, busca normalizando TODOS os números do banco
     if not t:
-        logger.info(f"[WEBHOOK-TWILIO] Thread não encontrada com número exato '{from_}', buscando com normalização...")
+        logger.info(f"[WEBHOOK-TWILIO] Buscando thread para número normalizado: '{from_}' (original: '{from_raw}')")
         all_threads = (
             db.query(Thread)
-            .filter(Thread.user_id == owner.id)
+            .filter(Thread.user_id == owner.id, Thread.external_user_phone.isnot(None))
             .all()
         )
+        logger.info(f"[WEBHOOK-TWILIO] Encontradas {len(all_threads)} threads do usuário {owner.id} com telefone")
+        
         for thread in all_threads:
-            if thread.external_user_phone and _normalize_phone(thread.external_user_phone) == from_:
-                logger.info(f"[WEBHOOK-TWILIO] Thread encontrada! ID={thread.id}, número antigo='{thread.external_user_phone}', normalizando para '{from_}'")
+            if not thread.external_user_phone:
+                continue
+            normalized_db_phone = _normalize_phone(thread.external_user_phone)
+            logger.debug(f"[WEBHOOK-TWILIO] Comparando: DB='{thread.external_user_phone}' (normalizado: '{normalized_db_phone}') vs incoming='{from_}'")
+            
+            if normalized_db_phone == from_:
+                logger.info(f"[WEBHOOK-TWILIO] ✅ Thread encontrada! ID={thread.id}, número DB='{thread.external_user_phone}' (normalizado: '{normalized_db_phone}')")
                 t = thread
-                # Atualiza o número no banco para o formato normalizado
+                # Atualiza o número no banco para o formato normalizado (se diferente)
                 if thread.external_user_phone != from_:
+                    logger.info(f"[WEBHOOK-TWILIO] Atualizando número no banco de '{thread.external_user_phone}' para '{from_}'")
                     thread.external_user_phone = from_
                     db.commit()
                     db.refresh(thread)
                 break
+        
+        if not t:
+            logger.warning(f"[WEBHOOK-TWILIO] ⚠️ Nenhuma thread encontrada para número '{from_}' (normalizado de '{from_raw}'). Criando nova thread.")
+    else:
+        logger.info(f"[WEBHOOK-TWILIO] ✅ Thread encontrada por busca exata: ID={t.id}, número='{from_}'")
     
     # Prepara o metadata com o nome do perfil se disponível
     meta_data = {}
