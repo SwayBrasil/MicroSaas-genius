@@ -142,6 +142,7 @@ export default function AppHeader() {
       {/* Navegação - Desktop */}
       {!isMobile && (
         <nav aria-label="Principal" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <NavBtn to="/dashboard" title="Dashboard"><span>📊 Dashboard</span></NavBtn>
           <NavBtn to="/" title="Chat"><span>Chat</span></NavBtn>
           <NavBtn to="/contacts" title="Contatos"><span>Contatos</span></NavBtn>
           <NavBtn to="/kanban" title="Kanban"><span>Kanban</span></NavBtn>
@@ -279,6 +280,27 @@ export default function AppHeader() {
                   }}
                 >
                   <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
+                    <button
+                      onClick={() => { navigate("/dashboard"); setShowMenu(false); }}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        background: "transparent",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      📊 Dashboard
+                    </button>
                     <button
                       onClick={() => { navigate("/"); setShowMenu(false); }}
                       style={{

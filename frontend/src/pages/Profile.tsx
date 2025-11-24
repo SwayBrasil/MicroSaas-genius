@@ -1,6 +1,21 @@
 // frontend/src/pages/Profile.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import { useAuth } from "../auth";
 import { getProfile, getUsage, getStats } from "../api";
 
@@ -117,13 +132,13 @@ function LeadDistribution({ frio = 0, morno = 0, quente = 0 }: { frio?: number; 
     <div style={{ display: "grid", gap: 10 }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <span className="chip" style={{ background: "#0f172a", color: "#93c5fd", border: "1px solid #1d4ed8" }}>
-          ❄️ Frio: <strong style={{ marginLeft: 6 }}>{frio}</strong> ({pct(frio)}%)
+          Frio: <strong style={{ marginLeft: 6 }}>{frio}</strong> ({pct(frio)}%)
         </span>
         <span className="chip" style={{ background: "#1f2937", color: "#fde68a", border: "1px solid #f59e0b" }}>
-          🌤️ Morno: <strong style={{ marginLeft: 6 }}>{morno}</strong> ({pct(morno)}%)
+          Morno: <strong style={{ marginLeft: 6 }}>{morno}</strong> ({pct(morno)}%)
         </span>
         <span className="chip" style={{ background: "#2d0f12", color: "#fecaca", border: "1px solid #dc2626" }}>
-          🔥 Quente: <strong style={{ marginLeft: 6 }}>{quente}</strong> ({pct(quente)}%)
+          Quente: <strong style={{ marginLeft: 6 }}>{quente}</strong> ({pct(quente)}%)
         </span>
       </div>
       <div style={{ height: 12, borderRadius: 999, overflow: "hidden", display: "flex" }}>
@@ -191,162 +206,6 @@ function MiniHeatmap24x7({
   );
 }
 
-/** =========================
- * Gráficos exist.
- * ========================= */
-type PieDatum = { label: string; value: number; color: string };
-function PieChart({
-  data,
-  size = 200,
-  strokeWidth = 26,
-  centerLabel,
-}: {
-  data: PieDatum[];
-  size?: number;
-  strokeWidth?: number;
-  centerLabel?: string;
-}) {
-  const total = Math.max(0, data.reduce((acc, d) => acc + (Number.isFinite(d.value) ? d.value : 0), 0));
-  const radius = (size - strokeWidth) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  let cumulative = 0;
-
-  return (
-    <div style={{ display: "grid", placeItems: "center" }}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        {total === 0 ? (
-          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="var(--border)" strokeWidth={strokeWidth} />
-        ) : (
-          data.map((d, idx) => {
-            const value = Math.max(0, d.value);
-            const portion = total ? value / total : 0;
-            const dash = 2 * Math.PI * radius * portion;
-            const gap = 2 * Math.PI * radius - dash;
-            const rotation = total ? (cumulative / total) * 360 : 0;
-            cumulative += value;
-            return (
-              <circle
-                key={idx}
-                cx={cx}
-                cy={cy}
-                r={radius}
-                fill="none"
-                stroke={d.color}
-                strokeWidth={strokeWidth}
-                strokeDasharray={`${dash} ${gap}`}
-                transform={`rotate(-90 ${cx} ${cy}) rotate(${rotation} ${cx} ${cy})`}
-              />
-            );
-          })
-        )}
-        <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" fontSize={14} fontWeight={700} fill="var(--text)">
-          {centerLabel ?? total}
-        </text>
-      </svg>
-      <div style={{ display: "flex", gap: 12, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
-        {data.map((d) => (
-          <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: d.color, display: "inline-block" }} />
-            <span className="small">
-              {d.label}: <strong>{d.value}</strong>
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LineChart({
-  series,
-  width = 520,
-  height = 220,
-  padding = 28,
-  label,
-}: {
-  series: { x: string; y: number }[];
-  width?: number;
-  height?: number;
-  padding?: number;
-  label?: string;
-}) {
-  const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null);
-  const w = width;
-  const h = height;
-  const plotW = w - padding * 2;
-  const plotH = h - padding * 2;
-
-  const ys = series.map((d) => d.y);
-  const yMax = Math.max(1, ...ys);
-  const n = Math.max(1, series.length);
-
-  const points = series.map((d, i) => {
-    const x = padding + (plotW * (i / Math.max(1, n - 1)));
-    const y = padding + plotH * (1 - d.y / yMax);
-    return { x, y, xy: `${x},${y}` };
-  });
-
-  return (
-    <div style={{ display: "grid", gap: 6, position: "relative" }}>
-      <svg
-        width={w}
-        height={h}
-        onMouseLeave={() => setHover(null)}
-        onMouseMove={(e) => {
-          const rect = (e.target as SVGElement).closest("svg")!.getBoundingClientRect();
-          const mx = e.clientX - rect.left;
-          let best = 0, bestDist = Infinity;
-          points.forEach((p, i) => {
-            const d = Math.abs(mx - p.x);
-            if (d < bestDist) { bestDist = d; best = i; }
-          });
-          setHover({ i: best, x: points[best].x, y: points[best].y });
-        }}
-        style={{ color: "var(--primary)" }}
-      >
-        <line x1={padding} y1={padding} x2={padding} y2={h - padding} stroke="var(--border)" strokeWidth={1} />
-        <line x1={padding} y1={h - padding} x2={w - padding} y2={h - padding} stroke="var(--border)" strokeWidth={1} />
-        {[0, 0.5, 1].map((t, i) => {
-          const yy = padding + plotH * (1 - t);
-          return <line key={i} x1={padding} y1={yy} x2={w - padding} y2={yy} stroke="var(--soft)" strokeWidth={1} />;
-        })}
-
-        {points.length >= 2 && <polyline points={points.map((p) => p.xy).join(" ")} fill="none" stroke="currentColor" strokeWidth={2} />}
-        {points.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill="currentColor" />)}
-
-        {hover && (
-          <>
-            <line x1={hover.x} y1={padding} x2={hover.x} y2={h - padding} stroke="var(--soft)" />
-            <circle cx={points[hover.i].x} cy={points[hover.i].y} r={5} fill="var(--primary)" />
-          </>
-        )}
-      </svg>
-
-      {label && <div className="small" style={{ textAlign: "center", opacity: 0.8 }}>{label}</div>}
-
-      {hover && (
-        <div
-          style={{
-            position: "absolute",
-            left: hover.x + 8,
-            top: Math.max(0, points[hover.i].y - 36),
-            background: "var(--panel)",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            padding: "6px 8px",
-            fontSize: 12,
-            boxShadow: "0 4px 16px rgba(0,0,0,.15)",
-            pointerEvents: "none",
-          }}
-        >
-          <div><strong>{series[hover.i].x}</strong></div>
-          <div>{series[hover.i].y} msgs</div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** =========================
  * Página Profile
@@ -397,24 +256,81 @@ export default function Profile() {
   const totalAssistant = stats?.assistant_messages ?? usage?.assistant_sent ?? 0;
   const totalMsgs = stats?.total_messages ?? usage?.messages_total ?? (totalUser + totalAssistant);
 
-  /** Pizza */
-  const pieData: PieDatum[] = [
-    { label: "Você", value: totalUser, color: "#6366f1" },
-    { label: "Assistente", value: totalAssistant, color: "#10b981" },
+  // Dados para gráficos
+  const pieData = [
+    { name: "Você", value: totalUser, color: "#6366f1" },
+    { name: "Assistente", value: totalAssistant, color: "#10b981" },
   ];
 
-  /** Linha por dia */
-  const messagesByDay: MessagesByDay[] = useMemo(() => {
-    if (stats?.messages_by_day?.length) {
-      return stats.messages_by_day.slice().sort((a, b) => a.date.localeCompare(b.date));
-    }
-    return [];
+  // Mensagens por dia
+  const chartData = useMemo(() => {
+    if (!stats?.messages_by_day || stats.messages_by_day.length === 0) return [];
+    return stats.messages_by_day
+      .slice()
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((d) => ({
+        date: new Date(d.date).toLocaleDateString("pt-BR", { month: "short", day: "numeric" }),
+        user: d.user || 0,
+        assistant: d.assistant || 0,
+        total: (d.user || 0) + (d.assistant || 0),
+      }));
   }, [stats?.messages_by_day]);
 
-  const lineSeries = messagesByDay.map((d) => ({
-    x: d.date,
-    y: Math.max(0, (d.user || 0) + (d.assistant || 0)),
-  }));
+  // Mensagens por hora
+  const hourlyData = useMemo(() => {
+    if (!stats?.messages_by_hour) return [];
+    return stats.messages_by_hour.map((count, hour) => ({
+      hour: `${hour.toString().padStart(2, "0")}:00`,
+      messages: count,
+    }));
+  }, [stats?.messages_by_hour]);
+
+  // Distribuição de leads
+  const leadDistribution = useMemo(() => {
+    const counts = { quente: 0, morno: 0, frio: 0, desconhecido: 0 };
+    if (stats?.lead_levels) {
+      counts.quente = stats.lead_levels.quente || 0;
+      counts.morno = stats.lead_levels.morno || 0;
+      counts.frio = stats.lead_levels.frio || 0;
+      counts.desconhecido = stats.lead_levels.desconhecido || 0;
+    }
+    const totalKnown = counts.quente + counts.morno + counts.frio;
+    const totalThreads = stats?.threads || 0;
+    if (counts.desconhecido === 0 && totalThreads > totalKnown) {
+      counts.desconhecido = totalThreads - totalKnown;
+    }
+    return [
+      { name: "Quente", value: counts.quente, color: "#dc2626" },
+      { name: "Morno", value: counts.morno, color: "#f59e0b" },
+      { name: "Frio", value: counts.frio, color: "#1d4ed8" },
+      { name: "Sem classificação", value: counts.desconhecido, color: "#6b7280" },
+    ].filter((item) => item.value > 0);
+  }, [stats?.lead_levels, stats?.threads]);
+
+  // Crescimento de conversas
+  const growthData = useMemo(() => {
+    if (!stats?.threads_growth || stats.threads_growth.length === 0) return [];
+    return stats.threads_growth.map((d) => ({
+      date: new Date(d.date).toLocaleDateString("pt-BR", { month: "short", day: "numeric" }),
+      conversas: d.count,
+    }));
+  }, [stats?.threads_growth]);
+
+  // Distribuição por origem
+  const originData = useMemo(() => {
+    if (!stats?.origin_distribution || stats.origin_distribution.length === 0) return [];
+    return stats.origin_distribution
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6);
+  }, [stats?.origin_distribution]);
+
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   /** Tempo ganho */
   const [humanSecondsPerMsg, setHumanSecondsPerMsg] = useState<number>(45);
@@ -535,35 +451,363 @@ export default function Profile() {
 
         {/* Visualizações principais */}
         <div className="profile-card" style={{ display: "grid", gap: 16 }}>
-          <div className="profile-title">Visualizações</div>
-          <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" }}>
-            {/* Pizza */}
+          <div className="profile-title" style={{ 
+            fontSize: isMobile ? 16 : 18, 
+            fontWeight: 600,
+            color: "var(--text)"
+          }}>
+            Visualizações
+          </div>
+          <div style={{ display: "grid", gap: 16, gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" }}>
+            {/* Gráfico de Pizza - Distribuição de mensagens */}
+            {pieData.some((d) => d.value > 0) && (
             <div style={{ display: "grid", gap: 12 }}>
-              <div className="small" style={{ fontWeight: 600 }}>Distribuição de mensagens</div>
-              <PieChart
-                data={pieData}
-                size={220}
-                strokeWidth={28}
-                centerLabel={`${totalMsgs} msgs`}
-              />
+                <div className="small" style={{ 
+                  fontWeight: 600,
+                  fontSize: isMobile ? 14 : 16,
+                  color: "var(--text)"
+                }}>
+                  Distribuição de mensagens
+                </div>
+                <div style={{ 
+                  width: "100%", 
+                  height: isMobile ? 260 : 240, 
+                  display: "flex", 
+                  alignItems: "center", 
+                  justifyContent: "center"
+                }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => isMobile ? `${(percent * 100).toFixed(0)}%` : `${name}: ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={isMobile ? 90 : 80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ 
+                          background: "var(--panel)", 
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--text)"
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
             </div>
-            {/* Linha */}
-            <div style={{ display: "grid", gap: 12 }}>
-              <div className="small" style={{ fontWeight: 600 }}>Mensagens por dia</div>
-              <div style={{ overflowX: "auto", maxWidth: "100%" }}>
-                <LineChart
-                  series={lineSeries}
-                  width={Math.max(520, 64 * Math.max(1, lineSeries.length))}
-                  height={240}
-                  label="Total por dia (você + assistente)"
-                />
               </div>
-              {!lineSeries.length && (
+            )}
+            {/* Gráfico de Área - Mensagens por dia */}
+            {chartData.length > 0 && (
+            <div style={{ display: "grid", gap: 12 }}>
+                <div className="small" style={{ 
+                  fontWeight: 600,
+                  fontSize: isMobile ? 14 : 16,
+                  color: "var(--text)"
+                }}>
+                  Mensagens por dia
+                </div>
+                <div style={{ 
+                  width: "100%", 
+                  height: isMobile ? 280 : 240, 
+                  overflow: "hidden",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ 
+                      top: 10, 
+                      right: isMobile ? 5 : 5, 
+                      left: isMobile ? 5 : 5, 
+                      bottom: isMobile ? 50 : 5 
+                    }}>
+                      <defs>
+                        <linearGradient id="colorUserProfile" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorAssistantProfile" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="var(--muted)"
+                        style={{ fontSize: isMobile ? 11 : 12 }}
+                        angle={isMobile ? -45 : 0}
+                        textAnchor={isMobile ? "end" : "middle"}
+                        height={isMobile ? 60 : 30}
+                      />
+                      <YAxis stroke="var(--muted)" style={{ fontSize: isMobile ? 11 : 12 }} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          background: "var(--panel)", 
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--text)"
+                        }}
+                      />
+                      <Legend />
+                      <Area 
+                        type="monotone" 
+                        dataKey="user" 
+                        name="Você" 
+                        stroke="#6366f1" 
+                        fillOpacity={1} 
+                        fill="url(#colorUserProfile)"
+                        strokeWidth={2}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="assistant" 
+                        name="Assistente" 
+                        stroke="#10b981" 
+                        fillOpacity={1} 
+                        fill="url(#colorAssistantProfile)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+              </div>
+              </div>
+            )}
+            {chartData.length === 0 && (
                 <div className="small" style={{ opacity: 0.7 }}>Sem histórico suficiente para exibir o gráfico.</div>
               )}
             </div>
           </div>
+
+        {/* Novos gráficos */}
+        <div style={{ display: "grid", gap: 16, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
+          {/* Gráfico de barras - Distribuição de leads */}
+          {leadDistribution.length > 0 && (
+            <div className="profile-card" style={{ display: "grid", gap: 12 }}>
+              <div className="profile-title" style={{ 
+                fontSize: isMobile ? 16 : 18, 
+                fontWeight: 600,
+                color: "var(--text)"
+              }}>
+                Temperatura dos Leads
         </div>
+              <div style={{ 
+                width: "100%", 
+                height: isMobile ? 260 : 240,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={leadDistribution} layout="vertical" margin={{ 
+                    top: 10, 
+                    right: isMobile ? 5 : 5, 
+                    left: isMobile ? 90 : 5, 
+                    bottom: 10 
+                  }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis type="number" stroke="var(--muted)" style={{ fontSize: isMobile ? 12 : 12 }} />
+                    <YAxis 
+                      dataKey="name" 
+                      type="category" 
+                      stroke="var(--muted)"
+                      style={{ fontSize: isMobile ? 12 : 12 }}
+                      width={isMobile ? 100 : 80}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        background: "var(--panel)", 
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        color: "var(--text)"
+                      }}
+                    />
+                    <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                      {leadDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Gráfico de mensagens por hora */}
+          {hourlyData.some((d) => d.messages > 0) && (
+            <div className="profile-card" style={{ display: "grid", gap: 12 }}>
+              <div className="profile-title" style={{ 
+                fontSize: isMobile ? 16 : 18, 
+                fontWeight: 600,
+                color: "var(--text)"
+              }}>
+                Mensagens por Hora
+              </div>
+              <div style={{ 
+                width: "100%", 
+                height: isMobile ? 300 : 240,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={hourlyData} margin={{ 
+                    top: 10, 
+                    right: isMobile ? 5 : 5, 
+                    left: isMobile ? 5 : 5, 
+                    bottom: isMobile ? 60 : 30 
+                  }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis 
+                        dataKey="hour" 
+                        stroke="var(--muted)"
+                        style={{ fontSize: isMobile ? 10 : 11 }}
+                        angle={isMobile ? -90 : -45}
+                        textAnchor="end"
+                        height={isMobile ? 80 : 60}
+                        interval={isMobile ? 2 : 0}
+                      />
+                      <YAxis stroke="var(--muted)" style={{ fontSize: isMobile ? 11 : 12 }} />
+                    <Tooltip 
+                      contentStyle={{ 
+                        background: "var(--panel)", 
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        color: "var(--text)"
+                      }}
+                    />
+                    <Bar dataKey="messages" fill="#6366f1" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Crescimento e Origem */}
+        {(growthData.length > 0 || originData.length > 0) && (
+          <div style={{ display: "grid", gap: 16, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
+            {/* Crescimento de conversas */}
+            {growthData.length > 0 && (
+              <div className="profile-card" style={{ display: "grid", gap: 12 }}>
+                <div className="profile-title" style={{ 
+                  fontSize: isMobile ? 16 : 18, 
+                  fontWeight: 600,
+                  color: "var(--text)"
+                }}>
+                  Crescimento (30 dias)
+                </div>
+                <div style={{ 
+                  width: "100%", 
+                  height: isMobile ? 280 : 240,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={growthData} margin={{ 
+                      top: 10, 
+                      right: isMobile ? 5 : 5, 
+                      left: isMobile ? 5 : 5, 
+                      bottom: isMobile ? 60 : 30 
+                    }}>
+                      <defs>
+                        <linearGradient id="colorGrowthProfile" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="var(--muted)"
+                        style={{ fontSize: isMobile ? 10 : 11 }}
+                        angle={isMobile ? -90 : -45}
+                        textAnchor="end"
+                        height={isMobile ? 80 : 60}
+                        interval={isMobile ? 2 : 0}
+                      />
+                      <YAxis stroke="var(--muted)" style={{ fontSize: isMobile ? 11 : 12 }} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          background: "var(--panel)", 
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--text)"
+                        }}
+                      />
+                      <Area 
+                        type="monotone" 
+                        dataKey="conversas" 
+                        stroke="#8b5cf6" 
+                        fillOpacity={1} 
+                        fill="url(#colorGrowthProfile)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Distribuição por origem */}
+            {originData.length > 0 && (
+              <div className="profile-card" style={{ display: "grid", gap: 12 }}>
+                <div className="profile-title" style={{ 
+                  fontSize: isMobile ? 16 : 18, 
+                  fontWeight: 600,
+                  color: "var(--text)"
+                }}>
+                  Origem dos Contatos
+                </div>
+                <div style={{ 
+                  width: "100%", 
+                  height: isMobile ? 260 : 240,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center"
+                }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={originData} layout="vertical" margin={{ 
+                      top: 10, 
+                      right: isMobile ? 5 : 5, 
+                      left: isMobile ? 110 : 5, 
+                      bottom: 10 
+                    }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis type="number" stroke="var(--muted)" style={{ fontSize: isMobile ? 12 : 12 }} />
+                      <YAxis 
+                        dataKey="origin" 
+                        type="category" 
+                        stroke="var(--muted)"
+                        style={{ fontSize: isMobile ? 12 : 12 }}
+                        width={isMobile ? 120 : 100}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          background: "var(--panel)", 
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--text)"
+                        }}
+                      />
+                      <Bar dataKey="count" fill="#f59e0b" radius={[0, 8, 8, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Atendimento & Qualidade */}
         {(stats?.first_response_time_ms_avg != null ||
@@ -597,39 +841,7 @@ export default function Profile() {
           </div>
         )}
 
-        {/* Distribuição de Leads */}
-        {stats?.lead_levels && (
-          <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-            <div className="profile-title">Temperatura dos leads</div>
-            <LeadDistribution
-              frio={stats.lead_levels?.frio ?? 0}
-              morno={stats.lead_levels?.morno ?? 0}
-              quente={stats.lead_levels?.quente ?? 0}
-            />
-          </div>
-        )}
 
-        {/* Heatmap horário (7x24 se vier, senão 24h simples) */}
-        {(stats?.messages_heatmap?.length || stats?.messages_by_hour?.length) && (
-          <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-            <div className="profile-title">Horários de pico</div>
-            {stats?.messages_heatmap?.length ? (
-              <MiniHeatmap24x7 heatmap={stats.messages_heatmap as number[][]} width={520} height={180} />
-            ) : (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div className="small" style={{ opacity: 0.8 }}>Mensagens por hora (0–23)</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(24, 1fr)", gap: 4 }}>
-                  {(stats?.messages_by_hour || []).map((v, i) => (
-                    <div key={i} title={`${i}h: ${v}`}
-                      style={{ height: 36, background: "var(--soft)", border: "1px solid var(--border)", display: "grid", placeItems: "center", borderRadius: 6 }}>
-                      <span className="small">{v}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Top contatos */}
         {stats?.top_contacts?.length ? (
@@ -702,18 +914,18 @@ export default function Profile() {
                   </tr>
                 </thead>
                 <tbody>
-                  {messagesByDay.map((d) => {
-                    const tot = (d.user || 0) + (d.assistant || 0);
+                  {chartData.map((d) => {
+                    const tot = d.user + d.assistant;
                     return (
                       <tr key={d.date}>
                         <Td>{d.date}</Td>
-                        <Td align="right">{d.user || 0}</Td>
-                        <Td align="right">{d.assistant || 0}</Td>
+                        <Td align="right">{d.user}</Td>
+                        <Td align="right">{d.assistant}</Td>
                         <Td align="right"><strong>{tot}</strong></Td>
                       </tr>
                     );
                   })}
-                  {!messagesByDay.length && (
+                  {!chartData.length && (
                     <tr><Td colSpan={4} align="center">Sem dados ainda.</Td></tr>
                   )}
                 </tbody>

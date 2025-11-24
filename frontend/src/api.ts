@@ -60,12 +60,25 @@ export type Message = {
 export type LoginResponse = { token: string };
 export type MeResponse = { id: number; email: string };
 
+export type MessagesByDay = {
+  date: string;
+  user: number;
+  assistant: number;
+};
+
 export type StatsResponse = {
   threads: number;
   user_messages: number;
   assistant_messages: number;
   total_messages: number;
   last_activity: string | null;
+  messages_by_day?: MessagesByDay[];
+  avg_assistant_response_ms?: number | null;
+  lead_levels?: { quente: number; morno: number; frio: number; desconhecido?: number };
+  messages_by_hour?: number[]; // 24 posições (0-23)
+  threads_growth?: { date: string; count: number }[];
+  origin_distribution?: { origin: string; count: number }[];
+  response_rate?: number; // porcentagem
 };
 
 export type ProfileDTO = {

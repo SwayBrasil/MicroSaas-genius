@@ -91,15 +91,18 @@ def enrich_product(product: Dict) -> Dict:
     images = product.get("images", [])
     product["main_image"] = images[0].get("src", "") if images else ""
     product["image_count"] = len(images)
+    product["all_images"] = [img.get("src", "") for img in images[:5]]  # Primeiras 5 imagens
     
     # Categorias simplificadas
     categories = product.get("categories", [])
     product["category_names"] = [c.get("name", "") for c in categories]
     product["category_slugs"] = [c.get("slug", "") for c in categories]
+    product["category_ids"] = [c.get("id", "") for c in categories]
     
     # Tags simplificadas
     tags = product.get("tags", [])
     product["tag_names"] = [t.get("name", "") for t in tags]
+    product["tag_slugs"] = [t.get("slug", "") for t in tags]
     
     # Informações de estoque
     product["stock_info"] = {
@@ -108,6 +111,57 @@ def enrich_product(product: Dict) -> Dict:
         "stock_status": product.get("stock_status", ""),
         "backorders": product.get("backorders", "no")
     }
+    
+    # Dimensões e peso (útil para cálculo de frete)
+    dimensions = product.get("dimensions", {})
+    product["dimensions"] = {
+        "length": dimensions.get("length", ""),
+        "width": dimensions.get("width", ""),
+        "height": dimensions.get("height", ""),
+        "unit": dimensions.get("unit", "cm")
+    }
+    product["weight"] = product.get("weight", "")
+    product["weight_unit"] = product.get("weight_unit", "kg")
+    
+    # Status e visibilidade
+    product["status"] = product.get("status", "publish")
+    product["featured"] = product.get("featured", False)
+    product["catalog_visibility"] = product.get("catalog_visibility", "visible")
+    
+    # SKU e código
+    product["sku"] = product.get("sku", "")
+    
+    # Data de criação e modificação
+    product["date_created"] = product.get("date_created", "")
+    product["date_modified"] = product.get("date_modified", "")
+    
+    # Atributos do produto (para produtos variáveis)
+    attributes = product.get("attributes", [])
+    product["attributes_list"] = []
+    for attr in attributes:
+        attr_info = {
+            "id": attr.get("id", ""),
+            "name": attr.get("name", ""),
+            "slug": attr.get("slug", ""),
+            "position": attr.get("position", 0),
+            "visible": attr.get("visible", False),
+            "variation": attr.get("variation", False),
+            "options": attr.get("options", [])
+        }
+        product["attributes_list"].append(attr_info)
+    
+    # Meta dados customizados (pode conter prazos, informações extras)
+    meta_data = product.get("meta_data", [])
+    product["custom_meta"] = {}
+    for meta in meta_data:
+        key = meta.get("key", "")
+        value = meta.get("value", "")
+        if key and value:
+            product["custom_meta"][key] = value
+    
+    # Links úteis
+    product["permalink"] = product.get("permalink", "")
+    product["view_product_url"] = product.get("permalink", "")
     
     return product
 
@@ -212,18 +266,31 @@ def collect_variations(products: List[Dict]) -> Dict[str, List[Dict]]:
                     link_parts.append(f"{key}={value}")
                 variation_link = f"{product_permalink}?{'&'.join(link_parts)}" if link_parts else product_permalink
                 
+                # Informações de preço da variação
+                var_price = v.get("price", "")
+                var_regular_price = v.get("regular_price", "")
+                var_sale_price = v.get("sale_price", "")
+                
                 var_list.append({
                     "id": v.get("id", ""),
                     "sku": v.get("sku", ""),
-                    "price": v.get("price", ""),
-                    "regular_price": v.get("regular_price", ""),
-                    "sale_price": v.get("sale_price", ""),
+                    "price": var_price,
+                    "regular_price": var_regular_price,
+                    "sale_price": var_sale_price,
                     "on_sale": v.get("on_sale", False),
+                    "has_price": bool(var_price and var_price != "0"),
                     "attributes": var_attrs,
                     "link": variation_link,
                     "stock_status": v.get("stock_status", ""),
                     "manage_stock": v.get("manage_stock", False),
                     "stock_quantity": v.get("stock_quantity"),
+                    "weight": v.get("weight", ""),
+                    "dimensions": {
+                        "length": v.get("dimensions", {}).get("length", ""),
+                        "width": v.get("dimensions", {}).get("width", ""),
+                        "height": v.get("dimensions", {}).get("height", ""),
+                    },
+                    "image": v.get("image", {}).get("src", "") if v.get("image") else "",
                 })
             
             variations[product_slug] = var_list
@@ -265,6 +332,13 @@ def main():
     products_with_price = sum(1 for p in products if p.get("price_info", {}).get("has_price"))
     products_on_sale = sum(1 for p in products if p.get("price_info", {}).get("on_sale"))
     products_with_images = sum(1 for p in products if p.get("main_image"))
+    products_simple = sum(1 for p in products if p.get("type") == "simple")
+    products_variable = sum(1 for p in products if p.get("type") == "variable")
+    products_grouped = sum(1 for p in products if p.get("type") == "grouped")
+    products_external = sum(1 for p in products if p.get("type") == "external")
+    
+    # Conta variações totais
+    total_variations = sum(len(vars_list) for vars_list in variations.values())
     
     # Estrutura final
     output = {
@@ -272,9 +346,15 @@ def main():
             "source": "WooCommerce API - Gráfica Arejano",
             "base_url": "https://graficaarejano.com.br/site",
             "collected_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "version": "2.0",  # Versão do formato de dados
             "total_products": len(products),
+            "products_simple": products_simple,
+            "products_variable": products_variable,
+            "products_grouped": products_grouped,
+            "products_external": products_external,
             "total_attributes": len(attributes),
             "total_variable_products": len(variations),
+            "total_variations": total_variations,
             "products_with_price": products_with_price,
             "products_on_sale": products_on_sale,
             "products_with_images": products_with_images

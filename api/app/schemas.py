@@ -1,14 +1,14 @@
 # api/app/schemas.py
 from datetime import datetime
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from pydantic import ConfigDict
 
 
 # ================== Auth ==================
 class LoginRequest(BaseModel):
-    email: str  # Changed from EmailStr to allow username-based login
+    email: EmailStr
     password: str
 
 
@@ -80,16 +80,20 @@ class ThreadRead(BaseModel):
 class ContactCreate(BaseModel):
     thread_id: int
     name: Optional[str] = None
-    email: Optional[str] = None
+    email: Union[str, None] = Field(default=None, description="Email do contato (aceita qualquer string, sem validação de formato)")
     phone: Optional[str] = None
     company: Optional[str] = None
+    
+    model_config = ConfigDict(extra="forbid")
 
 
 class ContactUpdate(BaseModel):
     name: Optional[str] = None
-    email: Optional[str] = None
+    email: Union[str, None] = Field(default=None, description="Email do contato (aceita qualquer string, sem validação de formato)")
     phone: Optional[str] = None
     company: Optional[str] = None
+    
+    model_config = ConfigDict(extra="forbid")
 
 
 class ContactTagCreate(BaseModel):

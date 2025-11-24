@@ -1507,14 +1507,107 @@ def stats(user: User = Depends(get_current_user), db: Session = Depends(get_db))
 
     avg_assistant_response_ms = int(sum(deltas_ms) / len(deltas_ms)) if deltas_ms else None
 
+    # ------- Distribuição de leads por temperatura -------
+    lead_levels = (
+        db.query(
+            Thread.lead_level,
+            func.count(Thread.id).label("count")
+        )
+        .group_by(Thread.lead_level)
+        .all()
+    )
+    lead_distribution = {"quente": 0, "morno": 0, "frio": 0, "desconhecido": 0}
+    for level, count in lead_levels:
+        if level in lead_distribution:
+            lead_distribution[level] = int(count or 0)
+        else:
+            # Leads sem classificação
+            lead_distribution["desconhecido"] += int(count or 0)
+    
+    # Se não tiver nenhum lead classificado, conta os que não têm lead_level
+    if sum(lead_distribution.values()) < threads_count:
+        lead_distribution["desconhecido"] = threads_count - sum([lead_distribution["quente"], lead_distribution["morno"], lead_distribution["frio"]])
+
+    # ------- Mensagens por hora do dia (0-23) -------
+    rows_hour = (
+        db.query(
+            func.extract("hour", Message.created_at).label("hour"),
+            func.count(Message.id).label("count")
+        )
+        .join(Thread, Thread.id == Message.thread_id)
+        .group_by(func.extract("hour", Message.created_at))
+        .order_by(func.extract("hour", Message.created_at).asc())
+        .all()
+    )
+    messages_by_hour = [0] * 24
+    for hour, count in rows_hour:
+        h = int(hour or 0)
+        if 0 <= h < 24:
+            messages_by_hour[h] = int(count or 0)
+
+    # ------- Threads criadas por dia (últimos 30 dias) -------
+    from datetime import timedelta
+    thirty_days_ago = datetime.now() - timedelta(days=30)
+    threads_by_day = (
+        db.query(
+            func.date_trunc("day", Thread.created_at).label("day"),
+            func.count(Thread.id).label("count")
+        )
+        .filter(Thread.created_at >= thirty_days_ago)
+        .group_by(func.date_trunc("day", Thread.created_at))
+        .order_by(func.date_trunc("day", Thread.created_at).asc())
+        .all()
+    )
+    threads_growth = []
+    for r in threads_by_day:
+        day = r[0]
+        if hasattr(day, "date"):
+            date_str = day.date().isoformat()
+        else:
+            date_str = str(day)[:10]
+        threads_growth.append({
+            "date": date_str,
+            "count": int(r.count or 0)
+        })
+
+    # ------- Distribuição por origem -------
+    origins = (
+        db.query(
+            Thread.origin,
+            func.count(Thread.id).label("count")
+        )
+        .group_by(Thread.origin)
+        .all()
+    )
+    origin_distribution = []
+    for origin, count in origins:
+        origin_name = origin or "sem_origem"
+        origin_distribution.append({
+            "origin": origin_name.replace("_", " ").title(),
+            "count": int(count or 0)
+        })
+
+    # ------- Taxa de resposta (threads com pelo menos 1 resposta do assistente) -------
+    threads_with_response = (
+        db.query(func.count(func.distinct(Message.thread_id)))
+        .filter(Message.role == "assistant")
+        .scalar()
+    ) or 0
+    response_rate = (threads_with_response / threads_count * 100) if threads_count > 0 else 0
+
     return {
         "threads": threads_count,
         "user_messages": user_msgs,
         "assistant_messages": assistant_msgs,
         "total_messages": total_msgs,
         "last_activity": last_activity,
-        "messages_by_day": messages_by_day,                 # ✅ gráfico usa isso
-        "avg_assistant_response_ms": avg_assistant_response_ms,  # ✅ tempo médio real
+        "messages_by_day": messages_by_day,
+        "avg_assistant_response_ms": avg_assistant_response_ms,
+        "lead_levels": lead_distribution,  # ✅ distribuição de leads
+        "messages_by_hour": messages_by_hour,  # ✅ mensagens por hora (24 posições)
+        "threads_growth": threads_growth,  # ✅ crescimento de conversas
+        "origin_distribution": origin_distribution,  # ✅ distribuição por origem
+        "response_rate": round(response_rate, 1),  # ✅ taxa de resposta (%)
     }
 
 
@@ -1553,3 +1646,98 @@ async def ws_thread(
             await websocket.receive_text()
     except WebSocketDisconnect:
         await hub.disconnect(thread_id, websocket)
+
+
+# -----------------------------
+# Webhook para atualização de dados WooCommerce
+# -----------------------------
+@app.post("/webhooks/wc-update")
+async def wc_update_webhook(
+    request: Request,
+    x_wc_webhook_source: Optional[str] = Header(None, alias="X-WC-Webhook-Source"),
+):
+    """
+    Endpoint para receber webhooks do WooCommerce quando produtos são atualizados.
+    Pode ser configurado no WooCommerce: Configurações > Avançado > Webhooks
+    """
+    import subprocess
+    import os
+    
+    # Verifica se é um webhook válido (opcional: adicionar validação de assinatura)
+    # Por enquanto, aceita qualquer requisição POST
+    
+    try:
+        # Executa o script de atualização em background
+        script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "collect_wc_data.py")
+        
+        # Executa o script Python
+        process = subprocess.Popen(
+            ["python3", script_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=os.path.dirname(script_path)
+        )
+        
+        # Não espera o processo terminar (executa em background)
+        # O processo continuará rodando mesmo após a resposta
+        
+        return {
+            "status": "accepted",
+            "message": "Atualização de dados iniciada em background"
+        }
+    except Exception as e:
+        logging.error(f"Erro ao processar webhook WooCommerce: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+
+@app.post("/admin/update-wc-data")
+async def manual_update_wc_data(
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Endpoint manual para atualizar dados do WooCommerce (requer autenticação)
+    """
+    import subprocess
+    import os
+    
+    try:
+        script_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "collect_wc_data.py")
+        
+        # Executa o script e captura a saída
+        result = subprocess.run(
+            ["python3", script_path],
+            capture_output=True,
+            text=True,
+            cwd=os.path.dirname(script_path),
+            timeout=300  # 5 minutos de timeout
+        )
+        
+        if result.returncode == 0:
+            return {
+                "status": "success",
+                "message": "Dados atualizados com sucesso",
+                "output": result.stdout
+            }
+        else:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "status": "error",
+                    "message": "Erro ao atualizar dados",
+                    "error": result.stderr
+                }
+            )
+    except subprocess.TimeoutExpired:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": "Timeout ao atualizar dados"}
+        )
+    except Exception as e:
+        logging.error(f"Erro ao atualizar dados WooCommerce: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )

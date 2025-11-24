@@ -5,6 +5,7 @@ import HeaderApp from "./components/AppHeader";
 import { ProtectedRoute } from "./ProtectedRoute";
 import Chat from "./pages/Chat";
 import Contacts from "./pages/Contacts";
+import Dashboard from "./pages/Dashboard";
 import Kanban from "./pages/Kanban";
 import Tasks from "./pages/Tasks";
 import Profile from "./pages/Profile";
@@ -58,6 +59,28 @@ export default function App() {
           />
 
           {/* Outras páginas - com header */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <>
+                  <HeaderApp />
+                  <div style={{ 
+                    flex: 1, 
+                    maxWidth: "100%", 
+                    margin: "0 auto", 
+                    width: "100%", 
+                    padding: "14px",
+                    overflow: "auto",
+                    boxSizing: "border-box"
+                  }}>
+                    <Dashboard />
+                  </div>
+                </>
+              </ProtectedRoute>
+            }
+          />
+
           <Route
             path="/contacts"
             element={

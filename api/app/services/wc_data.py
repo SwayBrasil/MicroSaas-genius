@@ -271,6 +271,33 @@ def search_products(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     return [product for _, product in results_with_score[:limit]]
 
 
+def _format_price(price_value: Any) -> Optional[str]:
+    """
+    Formata um valor de preço para string com formatação brasileira
+    """
+    if price_value is None or price_value == "" or price_value == "0":
+        return None
+    
+    try:
+        # Tenta converter para float
+        if isinstance(price_value, str):
+            # Remove caracteres não numéricos exceto vírgula e ponto
+            price_str = price_value.replace("R$", "").replace(" ", "").strip()
+            # Substitui vírgula por ponto para conversão
+            price_str = price_str.replace(",", ".")
+            price_float = float(price_str)
+        else:
+            price_float = float(price_value)
+        
+        if price_float <= 0:
+            return None
+        
+        # Formata como moeda brasileira
+        return f"R$ {price_float:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
+        return None
+
+
 def get_product_price(product_slug: str, attributes: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
     """
     Obtém preço de um produto, considerando variações se for produto variável
@@ -293,15 +320,33 @@ def get_product_price(product_slug: str, attributes: Optional[Dict[str, str]] = 
     # Produto simples
     if product.get("type") == "simple":
         price_info = product.get("price_info", {})
+        
+        # Obtém preços brutos
+        raw_price = price_info.get("price") or product.get("price", "")
+        raw_regular_price = price_info.get("regular_price") or product.get("regular_price", "")
+        raw_sale_price = price_info.get("sale_price") or product.get("sale_price", "")
+        
+        # Prioriza sale_price se estiver em promoção, senão usa regular_price ou price
+        if price_info.get("on_sale", False) and raw_sale_price:
+            final_price = raw_sale_price
+        elif raw_regular_price:
+            final_price = raw_regular_price
+        else:
+            final_price = raw_price
+        
+        price_formatted = _format_price(final_price)
+        
         return {
             "product_name": product.get("name"),
             "product_slug": product.get("slug"),
             "type": "simple",
-            "price": price_info.get("price"),
-            "regular_price": price_info.get("regular_price"),
-            "sale_price": price_info.get("sale_price"),
+            "price": price_formatted,
+            "price_raw": final_price,
+            "regular_price": _format_price(raw_regular_price) if raw_regular_price else None,
+            "sale_price": _format_price(raw_sale_price) if raw_sale_price else None,
             "on_sale": price_info.get("on_sale", False),
-            "link": product.get("permalink", "")
+            "link": product.get("permalink", ""),
+            "has_price": bool(price_formatted)
         }
     
     # Produto variável - busca variação correspondente
@@ -309,33 +354,72 @@ def get_product_price(product_slug: str, attributes: Optional[Dict[str, str]] = 
         data = _load_wc_data()
         variations = data.get("variations", {}).get(product_slug, [])
         
+        # Normaliza os atributos recebidos para comparação
+        normalized_attrs = {}
+        for attr_name, attr_value in attributes.items():
+            # Remove prefixos comuns
+            clean_key = attr_name.replace("pa_", "").replace("attribute_pa_", "")
+            normalized_attrs[clean_key] = attr_value.lower().strip()
+        
         # Tenta encontrar variação que corresponda aos atributos
+        best_match = None
+        best_match_score = 0
+        
         for variation in variations:
             var_attrs = variation.get("attributes", {})
-            match = True
+            match_count = 0
+            total_attrs = len(normalized_attrs)
             
-            for attr_name, attr_value in attributes.items():
-                # Normaliza nome do atributo (pode vir com ou sem pa_)
-                attr_key = attr_name.replace("pa_", "").replace("attribute_pa_", "")
-                var_value = var_attrs.get(attr_name) or var_attrs.get(attr_key)
-                
-                if not var_value or var_value.lower() != attr_value.lower():
-                    match = False
-                    break
+            # Normaliza atributos da variação
+            normalized_var_attrs = {}
+            for var_attr_key, var_attr_value in var_attrs.items():
+                clean_key = var_attr_key.replace("pa_", "").replace("attribute_pa_", "")
+                if var_attr_value:
+                    normalized_var_attrs[clean_key] = str(var_attr_value).lower().strip()
             
-            if match:
-                return {
-                    "product_name": product.get("name"),
-                    "product_slug": product.get("slug"),
-                    "type": "variation",
-                    "variation_id": variation.get("id"),
-                    "price": variation.get("price"),
-                    "regular_price": variation.get("regular_price"),
-                    "sale_price": variation.get("sale_price"),
-                    "on_sale": variation.get("on_sale", False),
-                    "link": variation.get("link", product.get("permalink", "")),
-                    "attributes": var_attrs
-                }
+            # Conta quantos atributos correspondem
+            for attr_key, attr_value in normalized_attrs.items():
+                var_value = normalized_var_attrs.get(attr_key)
+                if var_value and var_value == attr_value:
+                    match_count += 1
+            
+            # Se todos os atributos correspondem, é match perfeito
+            if match_count == total_attrs and total_attrs > 0:
+                best_match = variation
+                break
+            elif match_count > best_match_score:
+                best_match_score = match_count
+                best_match = variation
+        
+        if best_match:
+            raw_price = best_match.get("price", "")
+            raw_regular_price = best_match.get("regular_price", "")
+            raw_sale_price = best_match.get("sale_price", "")
+            
+            # Prioriza sale_price se estiver em promoção
+            if best_match.get("on_sale", False) and raw_sale_price:
+                final_price = raw_sale_price
+            elif raw_regular_price:
+                final_price = raw_regular_price
+            else:
+                final_price = raw_price
+            
+            price_formatted = _format_price(final_price)
+            
+            return {
+                "product_name": product.get("name"),
+                "product_slug": product.get("slug"),
+                "type": "variation",
+                "variation_id": best_match.get("id"),
+                "price": price_formatted,
+                "price_raw": final_price,
+                "regular_price": _format_price(raw_regular_price) if raw_regular_price else None,
+                "sale_price": _format_price(raw_sale_price) if raw_sale_price else None,
+                "on_sale": best_match.get("on_sale", False),
+                "link": best_match.get("link", product.get("permalink", "")),
+                "attributes": best_match.get("attributes", {}),
+                "has_price": bool(price_formatted)
+            }
         
         # Se não encontrou variação exata, retorna aviso
         return {
@@ -343,10 +427,10 @@ def get_product_price(product_slug: str, attributes: Optional[Dict[str, str]] = 
             "product_slug": product.get("slug"),
             "type": "variable",
             "error": "Variação não encontrada",
-            "message": f"A combinação de atributos especificada não foi encontrada para este produto. Use 'get_product_attributes' para ver quais atributos e valores são válidos.",
+            "message": f"A combinação de atributos especificada não foi encontrada para este produto. Use 'get_product_attributes' para ver quais atributos e valores são válidos antes de informar o preço.",
             "attributes_requested": attributes,
             "link": product.get("permalink", ""),
-            "note": "Este produto tem variações. O preço depende dos atributos selecionados. Verifique os atributos disponíveis antes de informar o preço."
+            "note": "Este produto tem variações. O preço depende dos atributos selecionados. Verifique os atributos disponíveis antes de informar o preço. NÃO invente preços."
         }
     
     # Produto variável sem atributos - não pode dar preço exato
@@ -355,18 +439,20 @@ def get_product_price(product_slug: str, attributes: Optional[Dict[str, str]] = 
         "product_slug": product.get("slug"),
         "type": "variable",
         "error": "Atributos necessários",
-        "message": "Este produto tem variações e requer atributos para calcular o preço. Use 'get_product_attributes' para ver quais atributos são necessários.",
+        "message": "Este produto tem variações e requer atributos para calcular o preço. Use 'get_product_attributes' para ver quais atributos são necessários antes de informar o preço.",
         "link": product.get("permalink", ""),
-        "note": "Este produto tem variações. O preço depende dos atributos selecionados. Não é possível informar o preço sem os atributos específicos."
+        "note": "Este produto tem variações. O preço depende dos atributos selecionados. NÃO é possível informar o preço sem os atributos específicos. NÃO invente preços."
     }
 
 
-def get_product_attributes(product_slug: str) -> Optional[Dict[str, Any]]:
+def get_product_attributes(product_slug: str, selected_attributes: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
     """
-    Obtém atributos disponíveis para um produto
+    Obtém atributos disponíveis para um produto, filtrando opções baseado em atributos já selecionados
     
     Args:
         product_slug: Slug do produto
+        selected_attributes: Dicionário com atributos já selecionados (ex: {"pa_tamanho": "200x90mm"})
+                            Quando fornecido, retorna apenas as opções válidas para os atributos restantes
         
     Returns:
         Dicionário com atributos e suas opções ou None
@@ -385,13 +471,100 @@ def get_product_attributes(product_slug: str) -> Optional[Dict[str, Any]]:
         "attributes": []
     }
     
-    for attr in attributes:
-        result["attributes"].append({
-            "id": attr.get("id"),
-            "name": attr.get("name"),
-            "slug": attr.get("slug"),
-            "options": attr.get("options", [])
-        })
+    # Se tem atributos selecionados, filtra opções baseado nas variações válidas
+    if selected_attributes and product.get("type") == "variable":
+        data = _load_wc_data()
+        variations = data.get("variations", {}).get(product_slug, [])
+        
+        # Normaliza atributos selecionados
+        normalized_selected = {}
+        for attr_name, attr_value in selected_attributes.items():
+            clean_key = attr_name.replace("pa_", "").replace("attribute_pa_", "")
+            normalized_selected[clean_key] = str(attr_value).lower().strip()
+        
+        # Encontra variações que correspondem aos atributos selecionados
+        matching_variations = []
+        for variation in variations:
+            var_attrs = variation.get("attributes", {})
+            matches = True
+            
+            for selected_key, selected_value in normalized_selected.items():
+                var_value = var_attrs.get(f"pa_{selected_key}") or var_attrs.get(f"attribute_pa_{selected_key}")
+                if var_value:
+                    var_value_normalized = str(var_value).lower().strip()
+                    if var_value_normalized != selected_value:
+                        matches = False
+                        break
+                else:
+                    matches = False
+                    break
+            
+            if matches:
+                matching_variations.append(variation)
+        
+        # Para cada atributo, coleta apenas as opções que existem nas variações correspondentes
+        for attr in attributes:
+            attr_slug = attr.get("slug", "")
+            attr_name = attr.get("name", "")
+            
+            # Se este atributo já foi selecionado, mostra apenas o valor selecionado
+            clean_attr_key = attr_slug.replace("pa_", "")
+            if clean_attr_key in normalized_selected:
+                selected_value = normalized_selected[clean_attr_key]
+                # Encontra o valor original (não normalizado) nas opções
+                matching_option = None
+                for option in attr.get("options", []):
+                    if str(option).lower().strip() == selected_value:
+                        matching_option = option
+                        break
+                
+                # Se não encontrou match exato, tenta match parcial (para casos como "200x90mm" vs "200 x 90 mm")
+                if not matching_option:
+                    for option in attr.get("options", []):
+                        option_normalized = str(option).lower().strip().replace(" ", "").replace("x", "x")
+                        if option_normalized == selected_value.replace(" ", "").replace("x", "x"):
+                            matching_option = option
+                            break
+                
+                result["attributes"].append({
+                    "id": attr.get("id"),
+                    "name": attr_name,
+                    "slug": attr_slug,
+                    "options": [matching_option] if matching_option else [selected_value],
+                    "selected": selected_value
+                })
+            else:
+                # Coleta opções válidas para este atributo nas variações correspondentes
+                valid_options = set()
+                for variation in matching_variations:
+                    var_attrs = variation.get("attributes", {})
+                    var_value = var_attrs.get(attr_slug) or var_attrs.get(f"attribute_{attr_slug}")
+                    if var_value:
+                        valid_options.add(str(var_value))
+                
+                # Filtra opções originais para manter apenas as válidas
+                original_options = attr.get("options", [])
+                filtered_options = [opt for opt in original_options if str(opt) in valid_options or not valid_options]
+                
+                # Se não encontrou variações correspondentes, mostra todas as opções
+                if not matching_variations:
+                    filtered_options = original_options
+                
+                result["attributes"].append({
+                    "id": attr.get("id"),
+                    "name": attr_name,
+                    "slug": attr_slug,
+                    "options": filtered_options if filtered_options else original_options
+                })
+    else:
+        # Sem filtro, retorna todas as opções
+        for attr in attributes:
+            result["attributes"].append({
+                "id": attr.get("id"),
+                "name": attr.get("name"),
+                "slug": attr.get("slug"),
+                "options": attr.get("options", [])
+            })
     
     return result
 
@@ -447,27 +620,119 @@ def get_product_description(product_slug: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def build_product_link(product_slug: str, attributes: Optional[Dict[str, str]] = None) -> Optional[str]:
+def build_product_link(product_slug: str, attributes: Optional[Dict[str, str]] = None) -> Optional[Dict[str, Any]]:
     """
-    Constrói link completo para um produto com atributos
+    Constrói link completo para um produto com atributos, validando combinações nas variações
     
     Args:
         product_slug: Slug do produto
-        attributes: Dicionário com atributos (ex: {"pa_tamanho": "90x50mm"})
+        attributes: Dicionário com atributos (ex: {"pa_tamanho": "90x50mm", "pa_quantidade": "1000"})
         
     Returns:
-        URL completa ou None
+        Dicionário com link, se encontrou variação válida, e informações sobre a combinação
     """
     product = lookup_product(product_slug)
     if not product:
-        return None
+        return {
+            "error": "Produto não encontrado",
+            "message": f"O produto '{product_slug}' não foi encontrado no catálogo."
+        }
     
     base_url = product.get("permalink", "")
     
+    # Se não tem atributos, retorna link base
     if not attributes:
-        return base_url
+        return {
+            "link": base_url,
+            "type": "base",
+            "message": "Link base do produto (sem atributos selecionados)"
+        }
     
-    # Constrói query string
+    # Se for produto variável, busca variação correspondente
+    if product.get("type") == "variable":
+        data = _load_wc_data()
+        variations = data.get("variations", {}).get(product_slug, [])
+        
+        if not variations:
+            # Se não tem variações, constrói link manualmente
+            return _build_link_manually(base_url, attributes)
+        
+        # Normaliza os atributos recebidos para comparação
+        normalized_attrs = {}
+        for attr_name, attr_value in attributes.items():
+            # Remove prefixos comuns
+            clean_key = attr_name.replace("pa_", "").replace("attribute_pa_", "")
+            normalized_attrs[clean_key] = attr_value.lower().strip()
+        
+        # Tenta encontrar variação que corresponda aos atributos
+        best_match = None
+        best_match_score = 0
+        
+        for variation in variations:
+            var_attrs = variation.get("attributes", {})
+            match_count = 0
+            total_attrs = len(normalized_attrs)
+            
+            # Normaliza atributos da variação
+            normalized_var_attrs = {}
+            for var_attr_key, var_attr_value in var_attrs.items():
+                clean_key = var_attr_key.replace("pa_", "").replace("attribute_pa_", "")
+                if var_attr_value:
+                    normalized_var_attrs[clean_key] = str(var_attr_value).lower().strip()
+            
+            # Conta quantos atributos correspondem
+            for attr_key, attr_value in normalized_attrs.items():
+                var_value = normalized_var_attrs.get(attr_key)
+                if var_value and var_value == attr_value:
+                    match_count += 1
+            
+            # Se todos os atributos correspondem, é match perfeito
+            if match_count == total_attrs and total_attrs > 0:
+                best_match = variation
+                break
+            elif match_count > best_match_score:
+                best_match_score = match_count
+                best_match = variation
+        
+        if best_match:
+            # Usa o link da variação (já está correto no JSON)
+            variation_link = best_match.get("link", "")
+            if variation_link:
+                return {
+                    "link": variation_link,
+                    "type": "variation",
+                    "variation_id": best_match.get("id"),
+                    "match_score": best_match_score,
+                    "total_attrs": len(normalized_attrs),
+                    "attributes": best_match.get("attributes", {}),
+                    "message": "Link gerado com base na variação encontrada"
+                }
+            else:
+                # Se não tem link na variação, constrói manualmente
+                return _build_link_manually(base_url, best_match.get("attributes", {}))
+        
+        # Se não encontrou variação, tenta construir link manualmente
+        return _build_link_manually(base_url, attributes)
+    
+    # Produto simples - constrói link manualmente
+    return _build_link_manually(base_url, attributes)
+
+
+def _build_link_manually(base_url: str, attributes: Dict[str, str]) -> Dict[str, Any]:
+    """
+    Constrói link manualmente quando não encontra variação exata
+    Tenta validar usando get_product_attributes se possível
+    """
+    if not attributes:
+        return {
+            "link": base_url,
+            "type": "base",
+            "message": "Link base (sem atributos)"
+        }
+    
+    # Tenta validar atributos usando get_product_attributes
+    # (isso será feito pela IA antes de chamar build_product_link)
+    
     query_parts = []
     for attr_name, attr_value in attributes.items():
         # Normaliza nome do atributo
@@ -478,11 +743,32 @@ def build_product_link(product_slug: str, attributes: Optional[Dict[str, str]] =
                 attr_name = f"attribute_pa_{attr_name}"
         
         # Converte valor para slug (minúsculas, hífens)
-        value_slug = attr_value.lower().replace(" ", "-").replace("(", "").replace(")", "")
+        # Remove espaços, parênteses, pontos, e normaliza
+        value_slug = str(attr_value).lower().strip()
+        value_slug = value_slug.replace(" ", "-")
+        value_slug = value_slug.replace("(", "").replace(")", "")
+        value_slug = value_slug.replace(".", "")
+        value_slug = value_slug.replace("x", "x")  # Mantém 'x' para dimensões como 40x40mm
+        # Remove múltiplos hífens consecutivos
+        while "--" in value_slug:
+            value_slug = value_slug.replace("--", "-")
+        # Remove hífen no final se houver
+        value_slug = value_slug.rstrip("-")
+        
         query_parts.append(f"{attr_name}={value_slug}")
     
     if query_parts:
-        return f"{base_url}?{'&'.join(query_parts)}"
+        link = f"{base_url}?{'&'.join(query_parts)}"
+        return {
+            "link": link,
+            "type": "manual",
+            "message": "Link construído manualmente (combinação pode não ser válida)",
+            "warning": "Esta combinação de atributos pode não existir. Verifique no site ou use 'get_product_attributes' para confirmar os valores válidos."
+        }
     
-    return base_url
+    return {
+        "link": base_url,
+        "type": "base",
+        "message": "Link base"
+    }
 
