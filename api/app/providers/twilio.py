@@ -33,17 +33,11 @@ def _split_message(text: str, max_length: int = TWILIO_MAX_LENGTH) -> list[str]:
     if len(text) <= max_length:
         return [text]
     
-    # Reserva espaço para indicador de parte (ex: " [1/3]")
-    # Estimativa: até 10 partes = " [10/10]" = 7 chars
-    indicator_space = 10
-    effective_max = max_length - indicator_space
+    # Não reserva espaço para indicador (removido conforme solicitado)
+    effective_max = max_length
     
     chunks = []
     remaining = text.strip()
-    total_chars = len(text)
-    
-    # Estima quantas partes serão necessárias (para o indicador)
-    estimated_parts = (total_chars // max_length) + 1
     
     while len(remaining) > effective_max:
         chunk = remaining[:effective_max]
@@ -56,27 +50,53 @@ def _split_message(text: str, max_length: int = TWILIO_MAX_LENGTH) -> list[str]:
             remaining = remaining[split_pos:].strip()
             continue
         
-        # Prioridade 2: Detectar itens de lista e quebrar entre itens completos
-        # Procura por padrões de lista: "1. ", "2. ", "- ", "* ", "• ", etc.
+        # Prioridade 2: Detectar itens de lista numerada e quebrar APÓS cada item completo
+        # Procura por padrões de lista: "1. **", "2. **", etc. (produtos)
+        # Busca TODOS os itens no chunk atual para encontrar o último item completo
         list_patterns = [
-            r'\n\d+\.\s+\*\*',  # "6. **["
-            r'\n\d+\.\s+',       # "6. "
-            r'\n[-*•]\s+',       # "- ", "* ", "• "
+            r'\n(\d+)\.\s+\*\*',  # "6. **["
+            r'\n(\d+)\.\s+',       # "6. "
         ]
         
         best_list_break = -1
+        last_item_end = -1
+        
+        # Busca todos os itens de lista no chunk
         for pattern in list_patterns:
-            matches = list(re.finditer(pattern, remaining[:effective_max]))
+            matches = list(re.finditer(pattern, remaining))
             if matches:
-                # Pega a última ocorrência antes do limite
+                # Encontra o último item completo que cabe no limite
                 for match in reversed(matches):
-                    if match.start() > effective_max * 0.3:  # Não muito no início
-                        best_list_break = match.start()
-                        break
+                    item_start = match.start()
+                    item_num = match.group(1) if match.groups() else None
+                    
+                    # Se o item começa antes do limite, procura onde ele termina
+                    if item_start < effective_max:
+                        # Procura o próximo item ou fim do texto
+                        next_item_match = None
+                        for next_match in matches:
+                            if next_match.start() > item_start:
+                                next_item_match = next_match
+                                break
+                        
+                        if next_item_match:
+                            # Item termina antes do próximo item
+                            item_end = next_item_match.start()
+                        else:
+                            # É o último item, termina no fim do texto ou no limite
+                            item_end = min(len(remaining), effective_max)
+                        
+                        # Se o item completo cabe, usa ele
+                        if item_end <= effective_max and item_end > effective_max * 0.3:
+                            last_item_end = item_end
+                            best_list_break = item_end
+                            break
+                
                 if best_list_break != -1:
                     break
         
         if best_list_break != -1:
+            # Quebra após o item completo
             split_pos = best_list_break
             chunks.append(remaining[:split_pos].strip())
             remaining = remaining[split_pos:].strip()
@@ -142,24 +162,7 @@ def _split_message(text: str, max_length: int = TWILIO_MAX_LENGTH) -> list[str]:
     if remaining:
         chunks.append(remaining)
     
-    # Adiciona indicadores de parte se houver múltiplas partes
-    if len(chunks) > 1:
-        total_parts = len(chunks)
-        formatted_chunks = []
-        for i, chunk in enumerate(chunks):
-            part_indicator = f" [{i+1}/{total_parts}]"
-            # Verifica se cabe o indicador
-            if len(chunk) + len(part_indicator) <= max_length:
-                formatted_chunks.append(chunk + part_indicator)
-            else:
-                # Se não cabe, tenta colocar no início
-                if len(part_indicator + chunk) <= max_length:
-                    formatted_chunks.append(part_indicator + " " + chunk)
-                else:
-                    # Se ainda não cabe, envia sem indicador (melhor que erro)
-                    formatted_chunks.append(chunk)
-        return formatted_chunks
-    
+    # Retorna chunks sem indicadores de parte (removido conforme solicitado)
     return chunks
 
 
