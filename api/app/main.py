@@ -1524,13 +1524,42 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
     )
 
     # Envia resposta via Twilio
+    if not reply or not reply.strip():
+        logger.warning(f"[WEBHOOK-TWILIO] Reply is empty, skipping send")
+        return {"status": "ok", "skipped": "empty_reply"}
+    
+    if not from_ or not from_.strip():
+        logger.error(f"[WEBHOOK-TWILIO] No phone number to send to (from_ is empty)")
+        return {"status": "error", "message": "No phone number"}
+    
+    # Garante que o número está no formato correto (a função send_text já faz isso, mas vamos garantir)
+    phone_to_send = from_.strip()
+    if not phone_to_send.startswith("+"):
+        logger.warning(f"[WEBHOOK-TWILIO] Phone number doesn't start with +, normalizing: {phone_to_send}")
+        if not phone_to_send.startswith("whatsapp:"):
+            phone_to_send = "+" + phone_to_send.lstrip("+")
+    
     try:
-        logger.info(f"[WEBHOOK-TWILIO] Sending reply to {from_}: {reply[:50]}...")
-        sid = await asyncio.to_thread(twilio_provider.send_text, from_, reply, "BOT")
-        logger.info(f"[WEBHOOK-TWILIO] Message sent successfully. SID: {sid}")
+        logger.info(f"[WEBHOOK-TWILIO] Sending reply to {phone_to_send}: {reply[:50]}...")
+        logger.info(f"[WEBHOOK-TWILIO] Reply length: {len(reply)} chars")
+        
+        sid = await asyncio.to_thread(twilio_provider.send_text, phone_to_send, reply, "BOT")
+        
+        if sid:
+            logger.info(f"[WEBHOOK-TWILIO] ✅ Message sent successfully. SID: {sid}")
+        else:
+            logger.warning(f"[WEBHOOK-TWILIO] ⚠️ send_text returned empty SID, but no exception was raised")
+            
     except Exception as e:
-        logger.error(f"[WEBHOOK-TWILIO] Error sending reply to {from_}: {str(e)}", exc_info=True)
+        logger.error(f"[WEBHOOK-TWILIO] ❌ Error sending reply to {phone_to_send}: {str(e)}", exc_info=True)
+        logger.error(f"[WEBHOOK-TWILIO] Exception type: {type(e).__name__}")
         # Não retorna erro para não quebrar o webhook, mas loga o problema
+        # Tenta enviar uma mensagem de erro genérica se possível
+        try:
+            error_msg = "Desculpe, houve um problema técnico. Nossa equipe foi notificada."
+            await asyncio.to_thread(twilio_provider.send_text, phone_to_send, error_msg, "BOT")
+        except:
+            logger.error(f"[WEBHOOK-TWILIO] Failed to send error message too")
     
     return {"status": "ok"}
 
