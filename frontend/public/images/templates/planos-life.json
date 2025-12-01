@@ -1,0 +1,13 @@
+{
+  "mensal": {
+    "titulo": "Plano Mensal",
+    "preco": "R$69,90",
+    "descricao": "Acesso à base do LIFE…\nPode cancelar quando quiser."
+  },
+  "anual": {
+    "titulo": "Plano Anual",
+    "preco": "R$598,80 (ou 12x de R$49,90)",
+    "descricao": "Acesso COMPLETO…\nInclui módulo Shape Slim\nParcelamento sem comprometer limite."
+  },
+  "pergunta_final": "Agora me fala, gata: qual plano faz mais sentido pra você?"
+}

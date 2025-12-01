@@ -8,12 +8,6 @@ from typing import List, Dict, Optional, Any
 
 from openai import OpenAI
 
-try:
-    import PyPDF2
-    PDF_AVAILABLE = True
-except ImportError:
-    PDF_AVAILABLE = False
-
 # Importa funções de consulta ao WooCommerce
 from .wc_data import (
     lookup_product,
@@ -36,8 +30,6 @@ API_KEY = os.getenv("OPENAI_API_KEY")
 # 2) AGENT_INSTRUCTIONS_FILE (caminho para arquivo com o prompt multiline)
 #    default aponta para o caminho dentro do container
 DEFAULT_PROMPT_FILE = "/app/app/agent_instructions.txt"
-# RAG docs directory - tenta container primeiro, depois local
-RAG_DOCS_DIR = Path("/app/app/rag_docs") if Path("/app/app/rag_docs").exists() else Path(__file__).parent.parent / "rag_docs"
 
 # Robustez
 REQUEST_TIMEOUT = float(os.getenv("OPENAI_REQUEST_TIMEOUT", "30"))  # segundos
@@ -69,154 +61,6 @@ AGENT_INSTRUCTIONS = _load_agent_instructions()
 
 # Cliente OpenAI
 client = OpenAI(api_key=API_KEY)
-
-
-# -----------------------------
-# RAG - Documentos de Conhecimento
-# -----------------------------
-
-# Mapeamento de palavras-chave para documentos RAG
-# Nomes dos documentos devem corresponder aos arquivos na pasta rag_docs
-RAG_KEYWORDS = {
-    "TRIAGEM.docx.pdf": [
-        "serviço", "serviços", "atender", "não atendo", "válido", "inválido",
-        "decoração", "artesanato", "serigrafia", "silk", "roupa", "uniforme",
-        "web", "site", "sistema", "programação", "audiovisual", "filmagem",
-        "dtf", "impressão dtf", "etiqueta dtf", "personalização dtf", "transferência dtf",
-        "topper", "topo de bolo", "squeeze", "brinde", "personalizado", "personalizada"
-    ],
-    "PAGAMENTO.docx.pdf": [
-        "pagamento", "pagar", "pix", "boleto", "crédito", "débito", "antecipado",
-        "depois", "retirada", "confiança", "empenho", "faturamento", "prefeitura",
-        "câmara", "secretaria", "órgão público", "empresa grande", "corporativo"
-    ],
-    "ARTE_ARQUIVO.docx.pdf": [
-        "arte", "arquivo", "criação", "designer", "layout", "logomarca", "logo",
-        "identidade visual", "checagem", "CMYK", "sangria", "margem", "vetorização",
-        "mockup", "aprovacao", "aprovação"
-    ],
-    "VARIÂNCIA.docx.pdf": [
-        "tamanho", "medida", "mm", "cm", "milímetro", "centímetro", "exato",
-        "precisão", "tolerância", "variância", "diferença", "dimensão"
-    ],
-    "ATENDIMENTO.docx.pdf": [
-        "atendimento", "cliente", "irritado", "reclamação", "problema", "cancelamento",
-        "escalada", "humano", "atendente", "urgência", "pra hoje", "agora"
-    ]
-}
-
-# Cache de documentos carregados
-_rag_docs_cache: Dict[str, str] = {}
-
-
-def _extract_text_from_pdf(pdf_path: Path) -> str:
-    """Extrai texto de um arquivo PDF"""
-    if not PDF_AVAILABLE:
-        return ""
-    
-    try:
-        text = ""
-        with open(pdf_path, "rb") as file:
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
-        return text.strip()
-    except Exception as e:
-        print(f"Erro ao extrair texto do PDF {pdf_path}: {e}")
-        return ""
-
-
-def _load_rag_document(doc_name: str) -> str:
-    """Carrega um documento RAG do cache ou do arquivo"""
-    if doc_name in _rag_docs_cache:
-        return _rag_docs_cache[doc_name]
-    
-    # Tenta encontrar o arquivo (pode ter extensões diferentes)
-    doc_path = None
-    
-    # Primeiro tenta com o nome exato
-    if (RAG_DOCS_DIR / doc_name).exists():
-        doc_path = RAG_DOCS_DIR / doc_name
-    else:
-        # Tenta com extensões comuns
-        for ext in [".pdf", ".txt", ".docx.pdf"]:
-            potential_path = RAG_DOCS_DIR / f"{doc_name}{ext}"
-            if potential_path.exists():
-                doc_path = potential_path
-                break
-    
-    if not doc_path or not doc_path.exists():
-        return ""
-    
-    # Extrai texto baseado na extensão
-    if doc_path.suffix == ".pdf" or doc_path.name.endswith(".pdf"):
-        content = _extract_text_from_pdf(doc_path)
-    elif doc_path.suffix == ".txt":
-        try:
-            content = doc_path.read_text(encoding="utf-8")
-        except Exception:
-            content = ""
-    else:
-        content = ""
-    
-    # Cacheia o conteúdo
-    if content:
-        _rag_docs_cache[doc_name] = content
-    
-    return content
-
-
-def _detect_relevant_rag_docs(message: str, thread_history: Optional[List[Dict[str, str]]] = None) -> List[str]:
-    """Detecta quais documentos RAG são relevantes baseado na mensagem e histórico"""
-    # Combina mensagem atual com histórico recente
-    full_text = message.lower()
-    if thread_history:
-        for msg in thread_history[-3:]:  # Últimas 3 mensagens
-            content = msg.get("content", "").lower()
-            full_text += " " + content
-    
-    relevant_docs = []
-    
-    # Verifica palavras-chave para cada documento
-    for doc_name, keywords in RAG_KEYWORDS.items():
-        for keyword in keywords:
-            if keyword.lower() in full_text:
-                relevant_docs.append(doc_name)
-                break
-    
-    # SEMPRE inclui TRIAGEM para garantir validação de serviços válidos/inválidos
-    # (mesmo que outros documentos sejam detectados, TRIAGEM é crítico)
-    if "TRIAGEM.docx.pdf" not in relevant_docs:
-        relevant_docs.append("TRIAGEM.docx.pdf")
-    
-    return list(set(relevant_docs))  # Remove duplicatas
-
-
-def _get_rag_context(message: str, thread_history: Optional[List[Dict[str, str]]] = None) -> str:
-    """Retorna o contexto RAG relevante para a mensagem"""
-    relevant_docs = _detect_relevant_rag_docs(message, thread_history)
-    
-    # Debug: log dos documentos detectados
-    if relevant_docs:
-        print(f"[RAG] Documentos detectados para mensagem: {relevant_docs}")
-    
-    if not relevant_docs:
-        return ""
-    
-    context_parts = []
-    for doc_name in relevant_docs:
-        content = _load_rag_document(doc_name)
-        if content:
-            context_parts.append(f"--- DOCUMENTO: {doc_name} ---\n{content}\n")
-            print(f"[RAG] ✅ Carregado: {doc_name} ({len(content)} caracteres)")
-        else:
-            print(f"[RAG] ⚠️  Não foi possível carregar: {doc_name}")
-    
-    context = "\n".join(context_parts)
-    if context:
-        print(f"[RAG] Contexto total: {len(context)} caracteres")
-    
-    return context
 
 
 # -----------------------------
@@ -480,6 +324,43 @@ async def _call_openai_with_retries(messages: List[Dict[str, Any]], use_function
             content = (message.content or "").strip()
             if not content and message.tool_calls:
                 content = "Desculpe, não consegui obter as informações solicitadas. Pode reformular sua pergunta?"
+            
+            # Tenta extrair JSON do conteúdo (pode ter texto antes/depois)
+            # A IA às vezes retorna texto + JSON, precisamos extrair só o JSON
+            import re
+            
+            # Padrão melhorado: procura por { ... } que contenha "response_type"
+            # Usa lookahead para garantir que tem response_type
+            json_pattern = r'\{[^{}]*"response_type"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+            json_matches = re.findall(json_pattern, content, re.DOTALL | re.IGNORECASE)
+            
+            # Se não encontrou com o padrão específico, tenta padrão genérico
+            if not json_matches:
+                json_pattern = r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
+                json_matches = re.findall(json_pattern, content, re.DOTALL)
+            
+            for json_str in json_matches:
+                try:
+                    parsed = json.loads(json_str)
+                    # Se for um objeto com response_type, retorna como dict para processamento especial
+                    if isinstance(parsed, dict) and "response_type" in parsed:
+                        # Log para debug
+                        print(f"[LLM_SERVICE] ✅ JSON detectado e parseado: {parsed}")
+                        return parsed
+                except json.JSONDecodeError as e:
+                    print(f"[LLM_SERVICE] ⚠️ Erro ao parsear JSON: {e}, conteúdo: {json_str[:100]}")
+                    continue  # Tenta próximo match
+            
+            # Fallback: tenta parsear o conteúdo inteiro se começar com { ou [
+            if content.startswith("{") or content.startswith("["):
+                try:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict) and "response_type" in parsed:
+                        print(f"[LLM_SERVICE] JSON detectado (início): {parsed}")
+                        return parsed
+                except json.JSONDecodeError:
+                    pass  # Não é JSON válido, retorna como string
+            
             return content
             
         except Exception as e:
@@ -517,22 +398,8 @@ async def run_llm(
     # Monta a lista de mensagens no formato da API
     messages: List[Dict[str, str]] = []
     
-    # Carrega contexto RAG relevante
-    print(f"[RAG] Processando mensagem: {message[:100]}...")
-    rag_context = _get_rag_context(message, thread_history)
-    
-    # Monta system prompt com instruções base + contexto RAG
+    # Monta system prompt com instruções do agente
     system_content = AGENT_INSTRUCTIONS
-    if rag_context:
-        system_content += "\n\n--- DOCUMENTOS DE CONHECIMENTO (RAG) ---\n"
-        system_content += "Use as informações abaixo para responder com precisão:\n\n"
-        system_content += rag_context
-        system_content += "\n--- FIM DOS DOCUMENTOS RAG ---\n"
-        system_content += "\nIMPORTANTE: Sempre priorize as informações dos documentos RAG acima quando houver conflito com outras instruções."
-        print(f"[RAG] ✅ Contexto RAG adicionado ao system prompt")
-    else:
-        print(f"[RAG] ℹ️  Nenhum documento RAG relevante detectado")
-    
     if system_content:
         messages.append({"role": "system", "content": system_content})
 

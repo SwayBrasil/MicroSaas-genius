@@ -36,6 +36,7 @@ class Thread(Base):
     origin = Column(String(64), nullable=True)
     lead_level = Column(String(32), nullable=True)
     lead_score = Column(Integer, nullable=True)
+    lead_stage = Column(String(64), nullable=True, index=True)  # Etapa atual do funil
 
     # ⚠️ Coluna real no banco: "meta"
     meta = Column(JSON, name="meta", nullable=True)

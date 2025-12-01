@@ -56,6 +56,13 @@ export type Thread = {
   last_message?: string | null;  // Preview da última mensagem
   last_message_at?: string | null;  // Data da última mensagem
   created_at?: string | null;  // Data de criação da thread
+  // Novos campos de lead/contato
+  funnel_id?: number | string | null;  // ID do funil
+  stage_id?: number | string | null;  // ID da etapa no funil
+  product_id?: number | string | null;  // ID do produto/plano principal
+  source?: string | null;  // Origem: "Eduzz compra", "Eduzz abandono", "The Members", "WhatsApp orgânico", etc.
+  tags?: string[];  // Lista de tags (strings simples)
+  // temperature e score já existem acima (lead_level e lead_score)
 };
 
 export type Message = {
@@ -146,7 +153,17 @@ export async function deleteThread(threadId: number | string): Promise<void> {
 
 export async function updateThread(
   threadId: number | string,
-  body: Partial<{ origin: string; lead_score: number; lead_level: "frio" | "morno" | "quente" }>
+  body: Partial<{ 
+    origin: string; 
+    lead_score: number; 
+    lead_level: "frio" | "morno" | "quente";
+    funnel_id?: number | string | null;
+    stage_id?: number | string | null;
+    product_id?: number | string | null;
+    source?: string | null;
+    tags?: string[];
+    metadata?: any;
+  }>
 ): Promise<Thread> {
   const { data } = await api.patch<Thread>(`/threads/${threadId}`, body);
   return data;

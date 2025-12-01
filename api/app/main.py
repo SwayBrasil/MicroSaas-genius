@@ -17,7 +17,9 @@ from fastapi import (
     Header,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from pathlib import Path
+from typing import Optional
 from fastapi.exception_handlers import http_exception_handler
 from starlette.status import HTTP_401_UNAUTHORIZED
 
@@ -39,6 +41,7 @@ from .schemas import (
 from .auth import create_token, verify_password, hash_password, get_current_user
 
 from .services.llm_service import run_llm
+from .services.response_processor import process_llm_response
 from .providers import twilio as twilio_provider
 from .providers import meta as meta_provider
 from .realtime import hub
@@ -65,6 +68,68 @@ logging.getLogger("uvicorn.error").info(f"[BOOT] CORS allow_origins = {ALLOWED_O
 @app.get("/debug/cors")
 def debug_cors():
     return {"ok": True, "origins": ALLOWED_ORIGINS}
+
+# -----------------------------
+# Servir arquivos estáticos (áudios, templates, imagens)
+# -----------------------------
+# Caminho relativo ao diretório do projeto (não ao container)
+FRONTEND_PUBLIC = Path(__file__).parent.parent.parent.parent / "frontend" / "public"
+
+# Fallback: tenta caminhos alternativos (incluindo volume montado no Docker)
+FALLBACK_PATHS = [
+    Path("/app/public"),  # Volume montado no Docker (prioridade) - frontend/public -> /app/public
+    Path("/app/frontend/public"),  # Alternativa
+    FRONTEND_PUBLIC,  # Caminho relativo local
+    Path("/app/../frontend/public"),  # Docker alternativo
+    Path.cwd() / "frontend" / "public",  # Caminho atual
+]
+
+def _find_file(relative_path: str) -> Optional[Path]:
+    """Encontra arquivo em múltiplos caminhos possíveis"""
+    for base in FALLBACK_PATHS:
+        file_path = base / relative_path
+        if file_path.exists() and file_path.is_file():
+            return file_path
+    return None
+
+@app.get("/audios/{path:path}")
+async def serve_audio(path: str):
+    """Serve arquivos de áudio do frontend/public/audios/"""
+    audio_file = _find_file(f"audios/{path}")
+    if audio_file:
+        print(f"[SERVE_AUDIO] ✅ Servindo: {audio_file}")
+        return FileResponse(
+            audio_file,
+            media_type="audio/ogg",  # .opus é similar a ogg
+            headers={
+                "Content-Disposition": f'inline; filename="{audio_file.name}"',
+                "Access-Control-Allow-Origin": "*",  # Permite CORS para Twilio
+            }
+        )
+    print(f"[SERVE_AUDIO] ❌ Arquivo não encontrado: audios/{path}")
+    print(f"[SERVE_AUDIO] Tentou caminhos: {[str(p / f'audios/{path}') for p in FALLBACK_PATHS]}")
+    raise HTTPException(404, f"Audio file not found: {path}")
+
+@app.get("/images/{path:path}")
+async def serve_image(path: str):
+    """Serve arquivos de imagem do frontend/public/images/"""
+    image_file = _find_file(f"images/{path}")
+    if image_file:
+        # Detecta tipo MIME
+        mime_type = "image/jpeg"
+        if image_file.suffix.lower() in [".png"]:
+            mime_type = "image/png"
+        elif image_file.suffix.lower() in [".webp"]:
+            mime_type = "image/webp"
+        return FileResponse(
+            image_file,
+            media_type=mime_type,
+            headers={
+                "Content-Disposition": f'inline; filename="{image_file.name}"',
+                "Access-Control-Allow-Origin": "*",  # Permite CORS para Twilio
+            }
+        )
+    raise HTTPException(404, f"Image file not found: {path}")
 
 # -----------------------------
 # Exception Handlers
@@ -181,6 +246,26 @@ def _fix_messages_is_human(db: Session) -> None:
             ) THEN
                 ALTER TABLE messages ALTER COLUMN is_human SET NOT NULL;
                 ALTER TABLE messages ALTER COLUMN is_human SET DEFAULT FALSE;
+            END IF;
+        END $$;
+    """))
+    db.commit()
+
+def _fix_threads_lead_stage(db: Session) -> None:
+    """
+    Garante a coluna threads.lead_stage (String) para armazenar etapa do funil.
+    Idempotente: pode rodar várias vezes.
+    """
+    db.execute(text("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name = 'threads' AND column_name = 'lead_stage'
+            ) THEN
+                ALTER TABLE threads ADD COLUMN lead_stage VARCHAR(64);
+                CREATE INDEX IF NOT EXISTS ix_threads_lead_stage ON threads(lead_stage);
             END IF;
         END $$;
     """))
@@ -526,6 +611,7 @@ def seed_user_and_migrate():
         # Migrações
         _fix_threads_meta(db)
         _fix_messages_is_human(db)
+        _fix_threads_lead_stage(db)  # Garante coluna lead_stage
         _fix_contacts_table(db)  # Garante que contacts tenha todas as colunas
         _update_existing_contacts(db)  # Atualiza contatos existentes
         
@@ -785,6 +871,19 @@ def _serialize_thread(t: Thread, db: Session = None) -> dict:
     except Exception:
         pass
     
+    # Extrai campos do metadata para facilitar acesso no frontend
+    meta = getattr(t, "meta", None)
+    meta_dict = {}
+    if meta:
+        if isinstance(meta, dict):
+            meta_dict = meta
+        elif isinstance(meta, str):
+            try:
+                import json
+                meta_dict = json.loads(meta)
+            except:
+                pass
+    
     return {
         "id": t.id,
         "user_id": getattr(t, "user_id", None),
@@ -793,12 +892,18 @@ def _serialize_thread(t: Thread, db: Session = None) -> dict:
         "origin": getattr(t, "origin", None),
         "lead_level": getattr(t, "lead_level", None),
         "lead_score": getattr(t, "lead_score", None),
-        "metadata": getattr(t, "meta", None),  # meta -> metadata
+        "metadata": meta_dict,  # meta -> metadata (sempre dict)
         "external_user_phone": getattr(t, "external_user_phone", None),
         "created_at": _iso(getattr(t, "created_at", None)),
         "contact_name": contact_name,  # Nome do contato associado
         "last_message": last_message,  # Preview da última mensagem
         "last_message_at": last_message_at,  # Data da última mensagem
+        # Campos achatados do metadata para facilitar acesso
+        "funnel_id": meta_dict.get("funnel_id") if meta_dict else None,
+        "stage_id": meta_dict.get("stage_id") if meta_dict else None,
+        "product_id": meta_dict.get("product_id") if meta_dict else None,
+        "source": meta_dict.get("source") if meta_dict else None,
+        "tags": meta_dict.get("tags") if meta_dict else None,
     }
 
 # -----------------------------
@@ -925,7 +1030,17 @@ def update_thread_endpoint(
     if body.lead_score is not None:
         t.lead_score = int(body.lead_score) if body.lead_score is not None else None
     if body.metadata is not None:
-        t.meta = body.metadata
+        # Se metadata é um dict, mescla com o existente (não sobrescreve tudo)
+        if isinstance(body.metadata, dict) and isinstance(t.meta, dict):
+            t.meta = {**(t.meta or {}), **body.metadata}
+        else:
+            t.meta = body.metadata
+    
+    # Atualiza campos específicos se vierem no metadata
+    if body.metadata and isinstance(body.metadata, dict):
+        # Permite atualizar funnel_id, stage_id, product_id, source, tags via metadata
+        # Esses campos podem vir direto no body ou dentro de metadata
+        pass  # Já foi tratado acima
 
     db.add(t)
     db.commit()
@@ -1007,6 +1122,34 @@ async def send_message(
             created_at=m_user.created_at,
         )
 
+    # 🔍 DETECÇÃO DE SUPORTE - Aciona takeover automático
+    from .services.support_detector import should_trigger_takeover
+    should_takeover, takeover_reason = should_trigger_takeover(body.content, t.meta)
+    
+    if should_takeover:
+        # Ativa takeover
+        t.human_takeover = True
+        db.commit()
+        db.refresh(t)
+        
+        # Envia mensagem de encaminhamento
+        takeover_msg = "Perfeita! 💖 Vou te passar com o time que cuida disso, tá bem? Um minutinho…"
+        try:
+            import asyncio
+            from .providers import twilio as twilio_provider
+            phone = (t.external_user_phone or "").strip()
+            if phone:
+                await asyncio.to_thread(twilio_provider.send_text, phone, takeover_msg, "BOT")
+        except Exception as e:
+            print(f"[MESSAGE] Erro ao enviar mensagem de takeover: {e}")
+        
+        return MessageRead(
+            id=m_user.id,
+            role=m_user.role,
+            content=body.content,
+            created_at=m_user.created_at,
+        )
+
     hist = [
         {"role": m.role, "content": m.content}
         for m in db.query(Message)
@@ -1014,6 +1157,29 @@ async def send_message(
         .order_by(Message.id.asc())
         .all()
     ]
+
+    # 🎯 ATUALIZAÇÃO AUTOMÁTICA DE ETAPA DO FUNIL
+    from .services.funnel_stage_manager import detect_stage_from_message, update_stage_from_event
+    import json as json_lib
+    
+    is_first_message = len(hist) == 0
+    current_meta = {}
+    if t.meta:
+        if isinstance(t.meta, dict):
+            current_meta = t.meta.copy()
+        elif isinstance(t.meta, str):
+            try:
+                current_meta = json_lib.loads(t.meta)
+            except:
+                pass
+    
+    event = detect_stage_from_message(body.content, current_meta, is_first_message)
+    if event:
+        updated_meta = update_stage_from_event(current_meta, event)
+        t.meta = updated_meta
+        t.lead_level = updated_meta.get("lead_level")
+        db.commit()
+        db.refresh(t)
 
     await _broadcast(thread_id, {"type": "assistant.typing.start"})
     reply = await run_llm(body.content, thread_history=hist, takeover=False)
@@ -1372,6 +1538,20 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         # Usa o nome do perfil se disponível, senão usa o padrão
         title = profile_name if profile_name else f"WhatsApp {from_[-4:]}"
         logger.warning(f"[WEBHOOK-TWILIO] ⚠️⚠️⚠️ Criando NOVA thread: título='{title}', número='{from_}' (normalizado de '{from_raw}')")
+        
+        # Detecta funil/etapa automaticamente para nova thread
+        from .services.funnel_detector import detect_funnel_and_stage
+        funnel_data = detect_funnel_and_stage(
+            message=body,
+            thread_meta=None,
+            is_first_message=True
+        )
+        
+        # Mescla metadata com dados do funil
+        if funnel_data:
+            meta_data.update(funnel_data)
+            logger.info(f"[WEBHOOK-TWILIO] 🎯 Funil detectado automaticamente: funnel_id={funnel_data.get('funnel_id')}, stage_id={funnel_data.get('stage_id')}, source={funnel_data.get('source')}")
+        
         t = Thread(
             user_id=owner.id, 
             title=title, 
@@ -1484,6 +1664,38 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         if not body:
             full_content = media_context.strip()
     
+    # Se é a primeira mensagem e ainda não tem funil definido, detecta automaticamente
+    from .models import Message as MessageModel
+    message_count = db.query(MessageModel).filter(MessageModel.thread_id == t.id).count()
+    is_first_message = message_count == 0
+    
+    if is_first_message or (t.meta and not (isinstance(t.meta, dict) and t.meta.get("funnel_id"))):
+        from .services.funnel_detector import detect_funnel_and_stage
+        import json
+        
+        current_meta = {}
+        if t.meta:
+            if isinstance(t.meta, dict):
+                current_meta = t.meta.copy()
+            elif isinstance(t.meta, str):
+                try:
+                    current_meta = json.loads(t.meta)
+                except:
+                    pass
+        
+        funnel_data = detect_funnel_and_stage(
+            message=full_content,
+            thread_meta=current_meta,
+            is_first_message=is_first_message
+        )
+        
+        if funnel_data:
+            current_meta.update(funnel_data)
+            t.meta = current_meta
+            db.commit()
+            db.refresh(t)
+            logger.info(f"[WEBHOOK-TWILIO] 🎯 Funil atualizado: funnel_id={funnel_data.get('funnel_id')}, stage_id={funnel_data.get('stage_id')}")
+    
     m_user = Message(thread_id=t.id, role="user", content=full_content)
     db.add(m_user)
     db.commit()
@@ -1498,63 +1710,141 @@ async def twilio_webhook(req: Request, db: Session = Depends(get_db)):
         logger.info(f"[WEBHOOK-TWILIO] Thread {t.id} in human takeover, skipping LLM")
         return {"status": "ok", "skipped_llm": True}
 
+    # Garante que o número está no formato correto (precisa estar antes da detecção de suporte)
+    phone_to_send = from_.strip()
+    if not phone_to_send.startswith("+"):
+        logger.warning(f"[WEBHOOK-TWILIO] Phone number doesn't start with +, normalizing: {phone_to_send}")
+        if not phone_to_send.startswith("whatsapp:"):
+            phone_to_send = "+" + phone_to_send.lstrip("+")
+
+    # 🔍 DETECÇÃO DE SUPORTE - Aciona takeover automático
+    from .services.support_detector import should_trigger_takeover
+    should_takeover, takeover_reason = should_trigger_takeover(full_content, t.meta)
+    
+    if should_takeover:
+        logger.warning(f"[WEBHOOK-TWILIO] 🚨 SUPORTE DETECTADO! Thread {t.id}: {takeover_reason}")
+        
+        # Ativa takeover
+        t.human_takeover = True
+        db.commit()
+        db.refresh(t)
+        
+        # Envia mensagem de encaminhamento
+        takeover_msg = "Perfeita! 💖 Vou te passar com o time que cuida disso, tá bem? Um minutinho…"
+        try:
+            await asyncio.to_thread(twilio_provider.send_text, phone_to_send, takeover_msg, "BOT")
+            logger.info(f"[WEBHOOK-TWILIO] ✅ Takeover ativado e mensagem enviada para thread {t.id}")
+        except Exception as e:
+            logger.error(f"[WEBHOOK-TWILIO] Erro ao enviar mensagem de takeover: {e}")
+        
+        return {"status": "ok", "takeover_triggered": True, "reason": takeover_reason}
+
     hist = [
         {"role": m.role, "content": m.content}
         for m in db.query(Message).filter(Message.thread_id == t.id).order_by(Message.id.asc()).all()
     ]
     logger.info(f"[WEBHOOK-TWILIO] Processing LLM for thread {t.id}, history length: {len(hist)}")
 
+    # 🎯 ENGINE DE AUTOMAÇÕES - Processa triggers e executa ações ANTES DO LLM
+    from .services.automation_engine import process_automation
+    import json as json_lib
+    
+    # Prepara thread_meta com lead_stage
+    current_meta = {}
+    if t.meta:
+        if isinstance(t.meta, dict):
+            current_meta = t.meta.copy()
+        elif isinstance(t.meta, str):
+            try:
+                current_meta = json_lib.loads(t.meta)
+            except:
+                pass
+    
+    # Adiciona lead_stage ao meta se não estiver
+    if "lead_stage" not in current_meta:
+        current_meta["lead_stage"] = t.lead_stage
+    
+    # Processa automação (ANTES de chamar LLM)
+    new_lead_stage, automation_metadata, should_skip_llm = await process_automation(
+        message=full_content,
+        phone_number=phone_to_send,
+        thread_meta=current_meta,
+        db_session=db,
+        thread_id=t.id
+    )
+    
+    # Se detectou suporte, para aqui
+    if should_skip_llm and automation_metadata.get("support_detected"):
+        # Ativa takeover
+        t.human_takeover = True
+        if automation_metadata.get("need_human"):
+            current_meta["need_human"] = True
+        t.meta = current_meta
+        db.commit()
+        db.refresh(t)
+        logger.warning(f"[WEBHOOK-TWILIO] 🚨 Automação parada por suporte detectado")
+        return {"status": "ok", "automation_stopped": True, "reason": "support_detected"}
+    
+    # Atualiza lead_stage se mudou
+    if new_lead_stage:
+        t.lead_stage = new_lead_stage
+        current_meta["lead_stage"] = new_lead_stage
+        current_meta.update(automation_metadata)
+        t.meta = current_meta
+        db.commit()
+        db.refresh(t)
+        logger.info(f"[WEBHOOK-TWILIO] ✅ Lead stage atualizado: {new_lead_stage}")
+    
+    # Se executou automação (gatilho detectado), NÃO chama LLM
+    if should_skip_llm:
+        logger.info(f"[WEBHOOK-TWILIO] ✅ Automação executada, pulando LLM. Gatilho: {automation_metadata.get('event', 'unknown')}")
+        
+        # Salva mensagem de registro da automação no banco
+        automation_msg = f"[Automação executada: {automation_metadata.get('event', 'unknown')}]"
+        m_automation = Message(thread_id=t.id, role="system", content=automation_msg)
+        db.add(m_automation)
+        db.commit()
+        
+        return {"status": "ok", "automation_executed": True, "lead_stage": new_lead_stage}
+
     await _broadcast(t.id, {"type": "assistant.typing.start"})
     try:
         reply = await run_llm(full_content, thread_history=hist, takeover=False)
-        logger.info(f"[WEBHOOK-TWILIO] LLM reply generated: {reply[:100]}...")
+        logger.info(f"[WEBHOOK-TWILIO] LLM reply generated: {type(reply).__name__}")
+        if isinstance(reply, dict):
+            logger.info(f"[WEBHOOK-TWILIO] LLM reply (dict): {reply}")
+        elif isinstance(reply, str):
+            logger.info(f"[WEBHOOK-TWILIO] LLM reply (str, first 200 chars): {reply[:200]}")
     except Exception as e:
         logger.error(f"[WEBHOOK-TWILIO] Error generating LLM reply: {str(e)}", exc_info=True)
         reply = "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente."
     await _broadcast(t.id, {"type": "assistant.typing.stop"})
 
-    m_assist = Message(thread_id=t.id, role="assistant", content=reply)
-    db.add(m_assist)
-    db.commit()
-    db.refresh(m_assist)
-
-    await _broadcast(
-        t.id,
-        {"type": "message.created", "message": {"id": m_assist.id, "role": "assistant", "content": reply}},
-    )
-
-    # Envia resposta via Twilio
-    if not reply or not reply.strip():
-        logger.warning(f"[WEBHOOK-TWILIO] Reply is empty, skipping send")
-        return {"status": "ok", "skipped": "empty_reply"}
-    
-    if not from_ or not from_.strip():
-        logger.error(f"[WEBHOOK-TWILIO] No phone number to send to (from_ is empty)")
-        return {"status": "error", "message": "No phone number"}
-    
-    # Garante que o número está no formato correto (a função send_text já faz isso, mas vamos garantir)
-    phone_to_send = from_.strip()
-    if not phone_to_send.startswith("+"):
-        logger.warning(f"[WEBHOOK-TWILIO] Phone number doesn't start with +, normalizing: {phone_to_send}")
-        if not phone_to_send.startswith("whatsapp:"):
-            phone_to_send = "+" + phone_to_send.lstrip("+")
-    
+    # Processa resposta (pode enviar áudio, template ou texto)
     try:
-        logger.info(f"[WEBHOOK-TWILIO] Sending reply to {phone_to_send}: {reply[:50]}...")
-        logger.info(f"[WEBHOOK-TWILIO] Reply length: {len(reply)} chars")
+        final_message, metadata = await process_llm_response(
+            reply=reply,
+            phone_number=phone_to_send,
+            thread_id=t.id,
+            db_session=db
+        )
         
-        sid = await asyncio.to_thread(twilio_provider.send_text, phone_to_send, reply, "BOT")
+        # Salva mensagem no banco
+        m_assist = Message(thread_id=t.id, role="assistant", content=final_message)
+        db.add(m_assist)
+        db.commit()
+        db.refresh(m_assist)
+
+        await _broadcast(
+            t.id,
+            {"type": "message.created", "message": {"id": m_assist.id, "role": "assistant", "content": final_message}},
+        )
         
-        if sid:
-            logger.info(f"[WEBHOOK-TWILIO] ✅ Message sent successfully. SID: {sid}")
-        else:
-            logger.warning(f"[WEBHOOK-TWILIO] ⚠️ send_text returned empty SID, but no exception was raised")
+        logger.info(f"[WEBHOOK-TWILIO] ✅ Response processed and sent. Metadata: {metadata}")
             
     except Exception as e:
-        logger.error(f"[WEBHOOK-TWILIO] ❌ Error sending reply to {phone_to_send}: {str(e)}", exc_info=True)
-        logger.error(f"[WEBHOOK-TWILIO] Exception type: {type(e).__name__}")
-        # Não retorna erro para não quebrar o webhook, mas loga o problema
-        # Tenta enviar uma mensagem de erro genérica se possível
+        logger.error(f"[WEBHOOK-TWILIO] ❌ Error processing response: {str(e)}", exc_info=True)
+        # Tenta enviar mensagem de erro
         try:
             error_msg = "Desculpe, houve um problema técnico. Nossa equipe foi notificada."
             await asyncio.to_thread(twilio_provider.send_text, phone_to_send, error_msg, "BOT")

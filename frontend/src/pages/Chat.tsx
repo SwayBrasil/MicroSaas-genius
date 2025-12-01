@@ -13,6 +13,9 @@ import {
 import { useLeadScore, getOverrideLevel, setOverrideLevel, type LeadLevel } from "../hooks/useLeadScore";
 import { computeLeadScoreFromMessages, levelFromScore } from "../utils/leadScore";
 import type { UIMessage } from "../types/lead";
+import { INITIAL_FUNNELS } from "../data/funnels";
+import { INITIAL_AUDIOS } from "../data/audios";
+import type { AutomationAction } from "../types/funnel";
 
 /** Utils */
 function clsx(...xs: Array<string | false | undefined>) {
@@ -507,12 +510,16 @@ function Composer({
   onSend,
   disabled,
   takeoverActive,
+  thread,
+  automationActive,
 }: {
   value: string;
   setValue: (v: string) => void;
   onSend: () => void;
   disabled: boolean;
   takeoverActive: boolean;
+  thread?: Thread;
+  automationActive?: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -538,6 +545,8 @@ function Composer({
   }
 
   const isDisabled = disabled || !takeoverActive;
+  const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
+  const isAutomationOnlyMode = hasAutomation && !takeoverActive; // IA só responde por gatilhos
 
   return (
     <div style={{ 
@@ -550,7 +559,39 @@ function Composer({
       boxSizing: "border-box",
       opacity: takeoverActive ? 1 : 0.6,
     }}>
-      {!takeoverActive && (
+      {/* Aviso quando em automação e takeover não ativo */}
+      {isAutomationOnlyMode && (
+        <div style={{
+          padding: "8px 12px",
+          marginBottom: 8,
+          background: "#7c3aed15",
+          border: "1px solid #7c3aed",
+          borderRadius: 8,
+          fontSize: isMobile ? 12 : 13,
+          color: "#a78bfa",
+          textAlign: "center",
+        }}>
+          ⚙️ Este contato está em automação. O assistente só responde por gatilhos configurados.
+        </div>
+      )}
+
+      {/* Aviso quando takeover ativo */}
+      {takeoverActive && hasAutomation && (
+        <div style={{
+          padding: "8px 12px",
+          marginBottom: 8,
+          background: "#1e3a8a15",
+          border: "1px solid #1e3a8a",
+          borderRadius: 8,
+          fontSize: isMobile ? 12 : 13,
+          color: "#93c5fd",
+          textAlign: "center",
+        }}>
+          👤 Você está assumindo. A automação é pausada enquanto você responde.
+        </div>
+      )}
+
+      {!takeoverActive && !isAutomationOnlyMode && (
         <div style={{
           padding: "8px 12px",
           marginBottom: 8,
@@ -655,6 +696,11 @@ export default function Chat() {
 
   // takeover (estado local; persistido no backend ao alternar)
   const [takeoverActive, setTakeoverActive] = useState<boolean>(false);
+  
+  // Automação
+  const [showAutomationModal, setShowAutomationModal] = useState<boolean>(false);
+  const [automationActive, setAutomationActive] = useState<boolean>(false); // TODO: buscar do backend
+  const [automationActions, setAutomationActions] = useState<AutomationAction[]>([]); // TODO: buscar do backend
 
   // Lead Tagging (tempo real)
   const [leadFilter, setLeadFilter] = useState<LeadLevel | "todos">("todos");
@@ -1191,49 +1237,97 @@ export default function Chat() {
                 }}>
                   {(() => {
                     const thread = threads.find(t => String(t.id) === activeId);
-                    
-                    // Debug: log para ver o que tem no thread
-                    if (thread) {
-                      console.log("[CHAT HEADER] Thread encontrado:", {
-                        id: thread.id,
-                        contact_name: thread.contact_name,
-                        title: thread.title,
-                        metadata: thread.metadata,
-                        external_user_phone: thread.external_user_phone,
-                      });
-                    } else {
-                      console.log("[CHAT HEADER] Thread não encontrado. activeId:", activeId, "Threads:", threads.map(t => ({ id: t.id, contact_name: t.contact_name, title: t.title })));
-                    }
-                    
                     if (!thread) return "Nova conversa";
                     
-                    // Prioridade: contact_name > title > metadata.name > metadata.profile_name > número
                     const name = thread.contact_name || 
                                  thread.title || 
                                  (thread.metadata as any)?.name ||
                                  (thread.metadata as any)?.profile_name;
                     
-                    console.log("[CHAT HEADER] Nome encontrado:", name);
-                    
                     if (name && name.trim()) return name.trim();
                     
-                    // Fallback: mostra últimos 4 dígitos do número
                     const phone = (thread.metadata as any)?.wa_id || 
                                  (thread.metadata as any)?.phone || 
                                  thread.external_user_phone;
                     if (phone) {
                       const phoneStr = String(phone).replace(/[^\d]/g, "");
-                      const display = `Contato • ${phoneStr.slice(-4)}`;
-                      console.log("[CHAT HEADER] Usando fallback com telefone:", display);
-                      return display;
+                      return `Contato • ${phoneStr.slice(-4)}`;
                     }
                     
-                    console.log("[CHAT HEADER] Usando fallback 'Nova conversa'");
                     return "Nova conversa";
                   })()}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-                  {takeoverActive ? "Modo humano ativo" : "Online"}
+                <div style={{ 
+                  fontSize: 11, 
+                  color: "var(--muted)", 
+                  marginTop: 2,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: isMobile ? 4 : 6,
+                  alignItems: "center",
+                }}>
+                  {(() => {
+                    const thread = threads.find(t => String(t.id) === activeId);
+                    if (!thread) return null;
+                    
+                    const phone = (thread.metadata as any)?.wa_id || 
+                                 (thread.metadata as any)?.phone || 
+                                 thread.external_user_phone;
+                    const phoneFormatted = phone 
+                      ? String(phone).replace(/[^\d]/g, "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 ($2) $3-$4")
+                      : null;
+                    
+                    // Busca dados do funil/etapa
+                    const funnelId = (thread as any).funnel_id || (thread as any).metadata?.funnel_id;
+                    const stageId = (thread as any).stage_id || (thread as any).metadata?.stage_id;
+                    const source = (thread as any).source || (thread as any).metadata?.source;
+                    const tags = (thread as any).tags || (thread as any).metadata?.tags || [];
+                    const productId = (thread as any).product_id || (thread as any).metadata?.product_id;
+                    
+                    // Busca nomes do funil e etapa
+                    let stageName = null;
+                    let funnelName = null;
+                    if (funnelId && stageId) {
+                      const funnel = INITIAL_FUNNELS.find(f => String(f.id) === String(funnelId));
+                      if (funnel) {
+                        funnelName = funnel.name;
+                        const stage = funnel.stages.find(s => String(s.id) === String(stageId));
+                        if (stage) {
+                          stageName = stage.name;
+                        } else {
+                          stageName = `Etapa #${stageId}`;
+                        }
+                      }
+                    }
+                    
+                    const productName = productId ? `Produto #${productId}` : null;
+                    
+                    return (
+                      <>
+                        {phoneFormatted && (
+                          <span style={{ whiteSpace: "nowrap" }}>📱 {phoneFormatted}</span>
+                        )}
+                        {funnelName && (
+                          <span style={{ whiteSpace: "nowrap" }}>🎯 {funnelName}</span>
+                        )}
+                        {stageName && (
+                          <span style={{ whiteSpace: "nowrap" }}>📍 {stageName}</span>
+                        )}
+                        {productName && (
+                          <span style={{ whiteSpace: "nowrap" }}>📦 {productName}</span>
+                        )}
+                        {source && (
+                          <span style={{ whiteSpace: "nowrap" }}>🔗 {source}</span>
+                        )}
+                        {tags && tags.length > 0 && (
+                          <span style={{ whiteSpace: "nowrap" }}>🏷️ {tags.slice(0, 2).join(", ")}{tags.length > 2 ? "..." : ""}</span>
+                        )}
+                        {!phoneFormatted && !funnelName && !stageName && !productName && !source && tags.length === 0 && (
+                          <span>{takeoverActive ? "Modo humano ativo" : "Online"}</span>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -1298,6 +1392,56 @@ export default function Chat() {
                   {isMobile ? "Humano" : "Modo humano ativo"}
                 </span>
               )}
+
+              {/* Tag de automação */}
+              {(() => {
+                const thread = threads.find(t => String(t.id) === activeId);
+                const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
+                
+                if (hasAutomation) {
+                  return (
+                    <span className="chip" style={{ 
+                      background: "#7c3aed", 
+                      color: "white", 
+                      fontSize: isMobile ? 10 : 12,
+                      padding: isMobile ? "2px 6px" : "4px 8px",
+                    }}>
+                      ⚙️ {isMobile ? "Automação" : "Em fluxo de automação"}
+                    </span>
+                  );
+                } else {
+                  return (
+                    <span className="chip soft" style={{ 
+                      fontSize: isMobile ? 10 : 12,
+                      padding: isMobile ? "2px 6px" : "4px 8px",
+                    }}>
+                      {isMobile ? "Manual" : "Modo manual"}
+                    </span>
+                  );
+                }
+              })()}
+
+              {/* Botão Ver fluxo */}
+              {(() => {
+                const thread = threads.find(t => String(t.id) === activeId);
+                const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
+                
+                if (hasAutomation) {
+                  return (
+                    <button
+                      className="btn soft"
+                      onClick={() => setShowAutomationModal(true)}
+                      style={{
+                        fontSize: isMobile ? 11 : 12,
+                        padding: isMobile ? "4px 8px" : "6px 10px",
+                      }}
+                    >
+                      {isMobile ? "📊" : "📊 Ver fluxo"}
+                    </button>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             <div style={{ 
@@ -1583,6 +1727,8 @@ export default function Chat() {
             onSend={handleSend}
             disabled={sending || !takeoverActive}
             takeoverActive={takeoverActive}
+            thread={threads.find(t => String(t.id) === activeId)}
+            automationActive={automationActive}
           />
         </main>
       ) : (
@@ -1608,6 +1754,255 @@ export default function Chat() {
           </div>
         </div>
       )}
+
+      {/* Modal lateral de automação */}
+      {showAutomationModal && (() => {
+        const modalIsMobile = window.innerWidth < 768;
+        return (
+          <>
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: "rgba(0,0,0,0.5)",
+                zIndex: 10000,
+              }}
+              onClick={() => setShowAutomationModal(false)}
+            />
+            <div
+              style={{
+                position: "fixed",
+                top: 0,
+                right: 0,
+                bottom: 0,
+                width: modalIsMobile ? "90vw" : 400,
+                maxWidth: "90vw",
+                background: "var(--panel)",
+                borderLeft: "1px solid var(--border)",
+                boxShadow: "-4px 0 12px rgba(0,0,0,0.15)",
+                zIndex: 10001,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+            {/* Header do modal */}
+            <div
+              style={{
+                padding: modalIsMobile ? "12px 14px" : "16px 20px",
+                borderBottom: "1px solid var(--border)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexShrink: 0,
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: modalIsMobile ? 16 : 18, fontWeight: 600 }}>
+                ⚙️ Fluxo de Automação
+              </h3>
+              <button
+                onClick={() => setShowAutomationModal(false)}
+                style={{
+                  padding: "6px 10px",
+                  background: "transparent",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontSize: 18,
+                  color: "var(--text)",
+                }}
+                aria-label="Fechar modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Conteúdo do modal */}
+            <div
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: modalIsMobile ? "12px 14px" : "16px 20px",
+              }}
+            >
+              {(() => {
+                const thread = threads.find(t => String(t.id) === activeId);
+                const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
+                
+                if (!hasAutomation) {
+                  return (
+                    <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}>
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>⚙️</div>
+                      <p style={{ margin: 0, fontSize: 14 }}>
+                        Nenhuma automação ativa para este contato.
+                      </p>
+                    </div>
+                  );
+                }
+
+                // Busca informações do funil e etapa
+                const funnelId = (thread as any)?.funnel_id;
+                const stageId = (thread as any)?.stage_id;
+                
+                const funnel = funnelId ? INITIAL_FUNNELS.find(f => f.id === funnelId) : null;
+                const stage = funnel && stageId ? funnel.stages.find(s => s.id === stageId) : null;
+                
+                const automationName = funnel?.name || (thread as any)?.automation_name || (thread as any)?.funnel_name || "Automação ativa";
+                const stageName = stage?.name || (thread as any)?.stage_name || ((thread as any)?.stage_id ? `Etapa #${(thread as any).stage_id}` : "Etapa atual");
+                
+                // Busca nome do áudio se houver
+                const audioName = stage?.audio_id ? INITIAL_AUDIOS.find(a => a.id === stage.audio_id)?.display_name : null;
+
+                return (
+                  <div style={{ display: "grid", gap: 16 }}>
+                    {/* Automação ativa */}
+                    <div className="card" style={{ padding: modalIsMobile ? 12 : 16 }}>
+                      <div style={{ 
+                        fontSize: 12, 
+                        color: "var(--muted)", 
+                        marginBottom: 8,
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}>
+                        Automação Ativa
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+                        {automationName}
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
+                        📍 {stageName}
+                      </div>
+                      {stage && (
+                        <div style={{ 
+                          padding: 8,
+                          background: "var(--bg)",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          color: "var(--text)",
+                        }}>
+                          <div style={{ marginBottom: 4, fontWeight: 600 }}>Fase: {stage.phase}</div>
+                          {audioName && (
+                            <div style={{ color: "var(--muted)" }}>
+                              🎵 Áudio: {audioName}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Últimas ações */}
+                    <div>
+                      <div style={{ 
+                        fontSize: 12, 
+                        color: "var(--muted)", 
+                        marginBottom: 12,
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.5,
+                      }}>
+                        Últimas Ações
+                      </div>
+                      {automationActions.length > 0 ? (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {automationActions.map((action) => {
+                            // Busca nome do áudio se for ação de áudio
+                            const audioName = action.audio_id 
+                              ? INITIAL_AUDIOS.find(a => a.id === action.audio_id)?.display_name 
+                              : null;
+                            
+                            const actionIcon = action.action_type === "audio_sent" ? "🎵" :
+                                              action.action_type === "text_sent" ? "💬" :
+                                              action.action_type === "image_sent" ? "🖼️" :
+                                              action.action_type === "link_sent" ? "🔗" :
+                                              action.action_type === "stage_moved" ? "📍" :
+                                              action.action_type === "tag_added" ? "🏷️" : "⚙️";
+                            
+                            return (
+                              <div
+                                key={action.id}
+                                className="card"
+                                style={{
+                                  padding: modalIsMobile ? 10 : 12,
+                                  display: "flex",
+                                  alignItems: "flex-start",
+                                  gap: 10,
+                                }}
+                              >
+                                <div style={{ 
+                                  width: 6, 
+                                  height: 6, 
+                                  borderRadius: 999, 
+                                  background: action.status === "executed" ? "#10b981" : 
+                                             action.status === "failed" ? "#dc2626" : "#f59e0b",
+                                  marginTop: 6,
+                                  flexShrink: 0,
+                                }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span>{actionIcon}</span>
+                                    <span>{audioName || action.action_description}</span>
+                                  </div>
+                                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                                    {new Date(action.executed_at).toLocaleString("pt-BR", {
+                                      day: "2-digit",
+                                      month: "2-digit",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="card" style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
+                          <div style={{ fontSize: 13 }}>
+                            Nenhuma ação registrada ainda.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Ações de exemplo (mock - remover quando integrar com backend) */}
+                    {automationActions.length === 0 && (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div className="card" style={{ padding: modalIsMobile ? 10 : 12, display: "flex", alignItems: "flex-start", gap: 10 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: 999, background: "#10b981", marginTop: 6, flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
+                              Áudio 1 enviado
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                              {new Date(Date.now() - 3600000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="card" style={{ padding: modalIsMobile ? 10 : 12, display: "flex", alignItems: "flex-start", gap: 10 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: 999, background: "#f59e0b", marginTop: 6, flexShrink: 0 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
+                              Follow-up agendado para 14:35
+                            </div>
+                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
+                              {new Date(Date.now() - 1800000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </>
+        );
+      })()}
     </div>
   );
 }

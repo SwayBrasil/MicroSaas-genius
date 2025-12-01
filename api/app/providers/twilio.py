@@ -216,3 +216,57 @@ def send_text(to_e164: str, body: str, sender: str = "BOT") -> str:
             # Se for uma mensagem subsequente, apenas loga o erro mas continua
     
     return first_sid or ""
+
+
+def send_audio(to_e164: str, audio_url: str, sender: str = "BOT") -> str:
+    """
+    Envia áudio pelo WhatsApp via Twilio.
+    
+    Args:
+        to_e164: Número do destinatário (formato E.164)
+        audio_url: URL pública do áudio (deve ser acessível pelo Twilio)
+        sender: "BOT" ou "HUMANO" (apenas para log)
+    
+    Returns:
+        SID da mensagem enviada
+    """
+    print(f"\033[93m[TWILIO][send_audio] 🎵 INICIANDO envio de áudio\033[0m")
+    print(f"\033[93m[TWILIO][send_audio]    to_e164: {to_e164}\033[0m")
+    print(f"\033[93m[TWILIO][send_audio]    audio_url: {audio_url}\033[0m")
+    print(f"\033[93m[TWILIO][send_audio]    sender: {sender}\033[0m")
+    
+    if not ACCOUNT_SID or not AUTH_TOKEN or not FROM:
+        error_msg = "❌ TWILIO envs faltando (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_WHATSAPP_FROM)"
+        print(f"\033[91m[TWILIO][send_audio] {error_msg}\033[0m")
+        raise RuntimeError(error_msg)
+
+    to = _fmt_whatsapp(to_e164)
+    from_ = FROM if FROM.startswith("whatsapp:") else f"whatsapp:{FROM}"
+    
+    print(f"\033[93m[TWILIO][send_audio]    to (formatado): {to}\033[0m")
+    print(f"\033[93m[TWILIO][send_audio]    from: {from_}\033[0m")
+
+    try:
+        # Twilio requer que o áudio seja uma URL pública acessível
+        print(f"\033[93m[TWILIO][send_audio] 📤 Chamando Twilio API...\033[0m")
+        
+        msg = _client.messages.create(
+            to=to,
+            from_=from_,
+            media_url=[audio_url]  # Twilio aceita lista de URLs de mídia
+        )
+        
+        print(f"\033[93m[TWILIO][send_audio] ✅ Twilio API respondeu: SID={msg.sid}\033[0m")
+        print(f"\033[93m[TWILIO][send_audio]    Status: {getattr(msg, 'status', 'N/A')}\033[0m")
+        
+        if sender.upper() == "BOT":
+            print(f"\033[94m[TWILIO][BOT] → {to} | ÁUDIO | SID={msg.sid} | URL={audio_url}\033[0m")
+        else:
+            print(f"\033[92m[TWILIO][HUMANO] → {to} | ÁUDIO | SID={msg.sid} | URL={audio_url}\033[0m")
+        
+        return msg.sid
+    except Exception as e:
+        print(f"\033[91m[TWILIO][send_audio] ❌ ERRO ao enviar áudio: {str(e)}\033[0m")
+        import traceback
+        traceback.print_exc()
+        raise

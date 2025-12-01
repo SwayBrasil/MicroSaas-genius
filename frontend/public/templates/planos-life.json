@@ -1,0 +1,28 @@
+{
+  "mensal": {
+    "nome": "Plano Mensal",
+    "preco": "R$69,90/mês",
+    "bullets": [
+      "Acesso à base do LIFE: treinos completos, planos alimentares e aulas sobre disciplina e motivação.",
+      "Pode cancelar quando quiser, sem fidelidade.",
+      "Ideal pra quem quer testar o método e já começar a ver resultado."
+    ],
+    "texto": "✨ *Plano Mensal – R$69,90/mês*\n\n• Acesso à base do LIFE: treinos completos, planos alimentares e aulas sobre disciplina e motivação.\n• Pode cancelar quando quiser, sem fidelidade.\n\nPerfeito pra você começar hoje sem complicação. 💖",
+    "pergunta_final": "Agora me fala, gata: qual plano faz mais sentido pra você? 💬🔥"
+  },
+  "anual": {
+    "nome": "Plano Anual",
+    "preco": "R$598,80 (ou 12x de R$49,90)",
+    "bullets": [
+      "Acesso COMPLETO ao LIFE: treinos, planos alimentares, aulas extras com médicas, nutricionistas e psicólogas.",
+      "Inclui o módulo exclusivo do Shape Slim.",
+      "Pode parcelar em até 12x sem comprometer o limite total do cartão.",
+      "Melhor custo-benefício pra quem quer transformação de verdade a longo prazo."
+    ],
+    "texto": "🔥 *Plano Anual – R$598,80 (ou 12x de R$49,90)*\n\n• Acesso COMPLETO ao LIFE: treinos, planos alimentares, aulas extras com médicas, nutricionistas e psicólogas.\n• Inclui o módulo exclusivo do Shape Slim.\n• Pode ser parcelado em até 12x sem comprometer o limite do cartão.\n\nÉ o plano perfeito pra quem quer resultado consistente e acompanhamento por mais tempo. 🚀",
+    "pergunta_final": "Agora me fala, gata: qual plano faz mais sentido pra você? 💬🔥"
+  }
+}
+
+
+

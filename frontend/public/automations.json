@@ -1,0 +1,296 @@
+{
+  "version": "1.0.0",
+  "description": "Configuração completa dos funis de automação do LIFE",
+  "funnels": [
+    {
+      "id": 1,
+      "name": "Funil Longo (LIFE)",
+      "type": "life_funil_longo",
+      "is_active": true,
+      "description": "Do 'quero saber do Life' → diagnóstico → proposta de plano → link de compra → pós-compra ou recuperação",
+      "stages": [
+        {
+          "id": 1,
+          "name": "Boas-vindas e Qualificação",
+          "order": 1,
+          "phase": "frio",
+          "audio": "/audios/funil-longo/01-boas-vindas-qualificacao.opus",
+          "conditions": [
+            {
+              "type": "user_message_contains",
+              "value": "quero saber do life|como funciona o life|quero saber sobre o life",
+              "operator": "contains"
+            }
+          ],
+          "next_stage": 2
+        },
+        {
+          "id": 2,
+          "name": "Diagnóstico de Dores",
+          "order": 2,
+          "phase": "aquecimento",
+          "audio": "/audios/funil-longo/02-dor-generica.opus",
+          "audio_variants": {
+            "emagrecimento": "/audios/funil-longo/02a-dor-emagrecimento.opus",
+            "ganho_massa": "/audios/funil-longo/02b-dor-ganho-massa.opus",
+            "pochete_flacidez": "/audios/funil-longo/02c-dor-pochete-flacidez.opus",
+            "autoestima": "/audios/funil-longo/02d-dor-autoestima.opus",
+            "composicao_corporal": "/audios/funil-longo/02e-dor-composicao-corporal.opus"
+          },
+          "images": [
+            "/images/prova-social/00000018.jpg",
+            "/images/prova-social/00000019.jpg",
+            "/images/prova-social/00000020.jpg",
+            "/images/prova-social/00000021.jpg",
+            "/images/prova-social/00000022.jpg",
+            "/images/prova-social/00000023.jpg",
+            "/images/prova-social/00000024.jpg",
+            "/images/prova-social/00000025.jpg"
+          ],
+          "text_template": "/images/templates/planos-life.json",
+          "text_after_images": "Me conta aqui gata, o que tá faltando pra tu dar esse passo?",
+          "conditions": [
+            {
+              "type": "user_message_intent",
+              "value": "dor|situação|problema|objetivo",
+              "operator": "contains"
+            }
+          ],
+          "next_stage": 3
+        },
+        {
+          "id": 3,
+          "name": "Explicação dos Planos",
+          "order": 3,
+          "phase": "aquecido",
+          "audio": "/audios/funil-longo/03-explicacao-planos.opus",
+          "text_template": "/images/templates/planos-life.json",
+          "conditions": [
+            {
+              "type": "user_message_contains",
+              "value": "claro|quero saber|planos|preço|quanto custa",
+              "operator": "contains"
+            }
+          ],
+          "next_stage": 4
+        },
+        {
+          "id": 4,
+          "name": "Fechamento - Escolha do Plano",
+          "order": 4,
+          "phase": "quente",
+          "text_templates": {
+            "anual": "/images/templates/fechamento-anual.txt",
+            "mensal": "/images/templates/fechamento-mensal.txt"
+          },
+          "conditions": [
+            {
+              "type": "user_choice",
+              "value": "plano_anual|anual|12 meses",
+              "operator": "contains"
+            },
+            {
+              "type": "user_choice",
+              "value": "plano_mensal|mensal|mês",
+              "operator": "contains"
+            }
+          ],
+          "actions": [
+            {
+              "type": "send_link",
+              "value": "https://edzz.la/DO408?a=10554737",
+              "when": "plano_anual"
+            },
+            {
+              "type": "send_link",
+              "value": "https://edzz.la/GQRLF?a=10554737",
+              "when": "plano_mensal"
+            }
+          ],
+          "next_stage": 5
+        },
+        {
+          "id": 5,
+          "name": "Pós-Compra",
+          "order": 5,
+          "phase": "assinante",
+          "text_template": "/images/templates/pos-compra-life.txt",
+          "conditions": [
+            {
+              "type": "external_webhook",
+              "value": "eduzz_purchase_approved",
+              "operator": "equals"
+            }
+          ],
+          "variables": {
+            "link_personalizado": "[LINK PERSONALIZADO]"
+          }
+        },
+        {
+          "id": 6,
+          "name": "Recuperação Pós Não Compra",
+          "order": 6,
+          "phase": "quente",
+          "audio": "/audios/funil-longo/04-recuperacao-pos-nao-compra.opus",
+          "conditions": [
+            {
+              "type": "external_webhook",
+              "value": "eduzz_no_purchase|eduzz_payment_failed",
+              "operator": "equals"
+            },
+            {
+              "type": "time_elapsed",
+              "value": "3600",
+              "operator": "greater_than"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Mini Funil Black Friday",
+      "type": "life_mini_funil_bf",
+      "is_active": true,
+      "description": "Oferta específica de BF + follow-ups",
+      "stages": [
+        {
+          "id": 7,
+          "name": "Oferta Black Friday",
+          "order": 1,
+          "phase": "aquecido",
+          "audio": "/audios/mini-funil-bf/01-oferta-black-friday.opus",
+          "conditions": [
+            {
+              "type": "lead_phase",
+              "value": "aquecido",
+              "operator": "equals"
+            }
+          ],
+          "next_stage": 8
+        },
+        {
+          "id": 8,
+          "name": "Follow-up Sem Resposta",
+          "order": 2,
+          "phase": "quente",
+          "audio": "/audios/mini-funil-bf/02-followup-sem-resposta.opus",
+          "conditions": [
+            {
+              "type": "time_elapsed",
+              "value": "3600",
+              "operator": "greater_than"
+            },
+            {
+              "type": "user_message_contains",
+              "value": "",
+              "operator": "equals",
+              "negate": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Funil de Recuperação Pós-Plataforma (50%)",
+      "type": "life_recuperacao_50",
+      "is_active": true,
+      "description": "Lead aqueceu na plataforma, não comprou → recebe oferta com 50% + sequência de follow-up",
+      "stages": [
+        {
+          "id": 9,
+          "name": "Texto Oferta 50%",
+          "order": 1,
+          "phase": "aquecido",
+          "text_template": "/images/templates/recuperacao-50-oferta.txt",
+          "conditions": [
+            {
+              "type": "external_webhook",
+              "value": "platform_no_purchase|platform_abandoned",
+              "operator": "equals"
+            }
+          ],
+          "next_stage": 10
+        },
+        {
+          "id": 10,
+          "name": "Follow-up Áudio 1",
+          "order": 2,
+          "phase": "quente",
+          "audio": "/audios/recuperacao-50/02-audio-followup.opus",
+          "conditions": [
+            {
+              "type": "time_elapsed",
+              "value": "1800",
+              "operator": "greater_than"
+            },
+            {
+              "type": "user_message_contains",
+              "value": "",
+              "operator": "equals",
+              "negate": true
+            }
+          ],
+          "next_stage": 11
+        },
+        {
+          "id": 11,
+          "name": "Último Chamado",
+          "order": 3,
+          "phase": "quente",
+          "audio": "/audios/recuperacao-50/03-audio-ultimo-chamado.opus",
+          "conditions": [
+            {
+              "type": "time_elapsed",
+              "value": "3600",
+              "operator": "greater_than"
+            },
+            {
+              "type": "user_message_contains",
+              "value": "",
+              "operator": "equals",
+              "negate": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "webhooks": {
+    "eduzz": {
+      "purchase_approved": {
+        "action": "move_to_stage",
+        "stage_id": 5,
+        "funnel_id": 1
+      },
+      "no_purchase": {
+        "action": "move_to_stage",
+        "stage_id": 6,
+        "funnel_id": 1
+      },
+      "payment_failed": {
+        "action": "move_to_stage",
+        "stage_id": 6,
+        "funnel_id": 1
+      }
+    },
+    "platform": {
+      "no_purchase": {
+        "action": "start_funnel",
+        "funnel_id": 3
+      },
+      "abandoned": {
+        "action": "start_funnel",
+        "funnel_id": 3
+      }
+    }
+  },
+  "timing": {
+    "followup_bf": 3600,
+    "followup_50_text": 1800,
+    "followup_50_audio": 3600,
+    "recovery_funil_longo": 3600
+  }
+}
+

@@ -10,6 +10,8 @@ import Kanban from "./pages/Kanban";
 import Tasks from "./pages/Tasks";
 import Profile from "./pages/Profile";
 import Login from "./pages/Login";
+import Audios from "./pages/Audios";
+import Automations from "./pages/Automations";
 import { useDarkMode } from "./hooks/useDarkMode";
 import "./styles.css"; // ✅ garante que o CSS global está carregado
 
@@ -131,6 +133,34 @@ export default function App() {
                   <HeaderApp />
                   <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
                     <Profile />
+                  </div>
+                </>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/audios"
+            element={
+              <ProtectedRoute>
+                <>
+                  <HeaderApp />
+                  <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
+                    <Audios />
+                  </div>
+                </>
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/automations"
+            element={
+              <ProtectedRoute>
+                <>
+                  <HeaderApp />
+                  <div style={{ flex: 1, maxWidth: 1100, margin: "0 auto", width: "100%", padding: 14 }}>
+                    <Automations />
                   </div>
                 </>
               </ProtectedRoute>

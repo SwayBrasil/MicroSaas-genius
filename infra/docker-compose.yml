@@ -25,6 +25,7 @@ services:
       DB_URL: postgresql+psycopg2://saas:saas@db:5432/saas
       CORS_ALLOW_ORIGINS: http://localhost:3000,${PUBLIC_BASE_URL}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      PUBLIC_FILES_BASE_URL: ${PUBLIC_FILES_BASE_URL:-http://localhost:3000}
       # Twilio (se usar):
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
@@ -43,6 +44,7 @@ services:
       - ../api/app:/app/app
       - ../api/arejano_wc_data.json:/app/arejano_wc_data.json
       - ../api/collect_wc_data.py:/app/collect_wc_data.py:ro
+      - ../frontend/public:/app/frontend/public:ro  # Monta arquivos públicos (áudios, imagens)
     command: ["sh", "-c", "./start.sh --reload"]
     healthcheck:
       test:

@@ -142,10 +142,13 @@ export default function AppHeader() {
       {/* Navegação - Desktop */}
       {!isMobile && (
         <nav aria-label="Principal" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-          <NavBtn to="/dashboard" title="Dashboard"><span>📊 Dashboard</span></NavBtn>
           <NavBtn to="/" title="Chat"><span>Chat</span></NavBtn>
           <NavBtn to="/contacts" title="Contatos"><span>Contatos</span></NavBtn>
-          <NavBtn to="/kanban" title="Kanban"><span>Kanban</span></NavBtn>
+          <NavBtn to="/kanban" title="Funil"><span>Funil</span></NavBtn>
+          <NavBtn to="/automations" title="Automações"><span>Automações</span></NavBtn>
+          <NavBtn to="/audios" title="Áudios"><span>Áudios</span></NavBtn>
+          <NavBtn to="/products" title="Produtos"><span>Produtos</span></NavBtn>
+          <NavBtn to="/integrations" title="Integrações"><span>Integrações</span></NavBtn>
           <NavBtn to="/tasks" title="Tarefas"><span>Tarefas</span></NavBtn>
           <NavBtn to="/profile" title="Minha conta"><span>Minha conta</span></NavBtn>
 
@@ -281,27 +284,6 @@ export default function AppHeader() {
                 >
                   <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
                     <button
-                      onClick={() => { navigate("/dashboard"); setShowMenu(false); }}
-                      style={{
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "10px 12px",
-                        background: "transparent",
-                        border: "none",
-                        borderRadius: 6,
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        fontSize: 14,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
-                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
-                    >
-                      📊 Dashboard
-                    </button>
-                    <button
                       onClick={() => { navigate("/"); setShowMenu(false); }}
                       style={{
                         width: "100%",
@@ -362,7 +344,91 @@ export default function AppHeader() {
                       onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
                       onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                     >
-                      📋 Kanban
+                      📊 Funil
+                    </button>
+                    <button
+                      onClick={() => { navigate("/automations"); setShowMenu(false); }}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        background: "transparent",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      ⚙️ Automações
+                    </button>
+                    <button
+                      onClick={() => { navigate("/audios"); setShowMenu(false); }}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        background: "transparent",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      🎵 Áudios
+                    </button>
+                    <button
+                      onClick={() => { navigate("/products"); setShowMenu(false); }}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        background: "transparent",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      📦 Produtos
+                    </button>
+                    <button
+                      onClick={() => { navigate("/integrations"); setShowMenu(false); }}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 12px",
+                        background: "transparent",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        fontSize: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--bg)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
+                    >
+                      🔌 Integrações
                     </button>
                     <button
                       onClick={() => { navigate("/tasks"); setShowMenu(false); }}

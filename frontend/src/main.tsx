@@ -16,6 +16,8 @@ import Kanban from "./pages/Kanban";
 import Tasks from "./pages/Tasks";
 import Profile from "./pages/Profile";
 import Login from "./pages/Login";
+import Audios from "./pages/Audios";
+import Automations from "./pages/Automations";
 import AppHeader from "./components/AppHeader";
 import { useDarkMode } from "./hooks/useDarkMode";
 import "./styles.css";
@@ -98,6 +100,22 @@ function AppShell() {
           element={
             <ProtectedRoute>
               <Profile />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/audios"
+          element={
+            <ProtectedRoute>
+              <Audios />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/automations"
+          element={
+            <ProtectedRoute>
+              <Automations />
             </ProtectedRoute>
           }
         />
