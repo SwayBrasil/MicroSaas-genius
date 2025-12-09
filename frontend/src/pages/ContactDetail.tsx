@@ -11,10 +11,16 @@ import {
   deleteContactNote,
   createContactReminder,
   updateContactReminder,
+  getContactSubscriptionStatus,
+  getContactSubscriptions,
+  getContactSales,
   type Contact,
   type ContactTag,
   type ContactNote,
   type ContactReminder,
+  type SubscriptionStatus,
+  type Subscription,
+  type ContactSales,
 } from "../api";
 
 export default function ContactDetail() {
@@ -26,6 +32,11 @@ export default function ContactDetail() {
   const [newTag, setNewTag] = useState("");
   const [newNote, setNewNote] = useState("");
   const [newReminder, setNewReminder] = useState({ message: "", dueDate: "" });
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [loadingSubscription, setLoadingSubscription] = useState(false);
+  const [contactSales, setContactSales] = useState<ContactSales | null>(null);
+  const [loadingSales, setLoadingSales] = useState(false);
 
   useEffect(() => {
     if (!threadId) return;
@@ -38,6 +49,11 @@ export default function ContactDetail() {
       setLoading(true);
       const c = await getContactByThread(Number(threadId));
       setContact(c);
+      // Carrega status de assinatura e vendas
+      if (c.id) {
+        loadSubscriptionStatus(c.id);
+        loadContactSales(c.id);
+      }
     } catch (error: any) {
       console.error("Erro ao carregar contato:", error);
       // Tenta criar se não existir
@@ -47,6 +63,37 @@ export default function ContactDetail() {
       }
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadSubscriptionStatus(contactId: number) {
+    try {
+      setLoadingSubscription(true);
+      const [status, subs] = await Promise.all([
+        getContactSubscriptionStatus(contactId),
+        getContactSubscriptions(contactId),
+      ]);
+      setSubscriptionStatus(status);
+      setSubscriptions(subs);
+    } catch (error) {
+      console.error("Erro ao carregar assinatura:", error);
+      setSubscriptionStatus(null);
+      setSubscriptions([]);
+    } finally {
+      setLoadingSubscription(false);
+    }
+  }
+
+  async function loadContactSales(contactId: number) {
+    try {
+      setLoadingSales(true);
+      const sales = await getContactSales(contactId);
+      setContactSales(sales);
+    } catch (error) {
+      console.error("Erro ao carregar vendas:", error);
+      setContactSales(null);
+    } finally {
+      setLoadingSales(false);
     }
   }
 
@@ -250,6 +297,89 @@ export default function ContactDetail() {
             </div>
           </div>
 
+          {/* Assinatura */}
+          <div className="profile-card">
+            <h3 style={{ margin: "0 0 16px 0" }}>Assinatura</h3>
+            {loadingSubscription ? (
+              <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
+                Carregando...
+              </div>
+            ) : subscriptionStatus?.has_subscription ? (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ color: "var(--muted)" }}>Status:</span>
+                  <span
+                    style={{
+                      padding: "4px 12px",
+                      borderRadius: 12,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: subscriptionStatus.is_active
+                        ? "rgba(34, 197, 94, 0.15)"
+                        : "rgba(239, 68, 68, 0.15)",
+                      color: subscriptionStatus.is_active ? "#22c55e" : "#ef4444",
+                    }}
+                  >
+                    {subscriptionStatus.is_active ? "✅ Ativo" : "❌ Inativo"}
+                  </span>
+                </div>
+                {subscriptionStatus.product_title && (
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--muted)" }}>Produto:</span>
+                    <strong>{subscriptionStatus.product_title}</strong>
+                  </div>
+                )}
+                {subscriptionStatus.expires_at && (
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ color: "var(--muted)" }}>Expira em:</span>
+                    <span>{new Date(subscriptionStatus.expires_at).toLocaleDateString("pt-BR")}</span>
+                  </div>
+                )}
+                {subscriptions.length > 0 && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Histórico:</div>
+                    {subscriptions.map((sub) => (
+                      <div
+                        key={sub.id}
+                        style={{
+                          padding: 8,
+                          marginBottom: 4,
+                          background: "var(--panel)",
+                          borderRadius: 6,
+                          fontSize: 12,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>{sub.product_title || "Produto"}</span>
+                          <span
+                            style={{
+                              color: sub.status === "active" ? "#22c55e" : "#ef4444",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {sub.status}
+                          </span>
+                        </div>
+                        {sub.expires_at && (
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                            Expira: {new Date(sub.expires_at).toLocaleDateString("pt-BR")}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
+                <div>Não possui assinatura ativa</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  Este contato ainda não tem uma assinatura na The Members
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Métricas */}
           <div className="profile-card">
             <h3 style={{ margin: "0 0 16px 0" }}>Métricas</h3>
@@ -275,6 +405,94 @@ export default function ContactDetail() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Vendas e Compras */}
+          <div className="profile-card">
+            <h3 style={{ margin: "0 0 16px 0" }}>Vendas e Compras</h3>
+            {loadingSales ? (
+              <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
+                Carregando...
+              </div>
+            ) : contactSales ? (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Total de Vendas</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{contactSales.total_sales}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Faturamento</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>
+                      {formatCurrency(contactSales.total_revenue)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 4 }}>Assinaturas Ativas</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: "#22c55e" }}>{contactSales.active_subscriptions}</div>
+                  </div>
+                </div>
+
+                {contactSales.sales.length > 0 && (
+                  <div style={{ marginTop: 16 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Histórico de Vendas</div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {contactSales.sales.map((sale) => (
+                        <div
+                          key={sale.id}
+                          style={{
+                            padding: 12,
+                            background: "var(--panel)",
+                            borderRadius: 8,
+                            border: "1px solid var(--border)",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 14 }}>
+                                {sale.event === "sale.approved" ? "Venda Aprovada" : sale.event}
+                              </div>
+                              {sale.order_id && (
+                                <div style={{ fontSize: 12, color: "var(--muted)" }}>Pedido: {sale.order_id}</div>
+                              )}
+                            </div>
+                            {sale.value && (
+                              <div style={{ fontSize: 16, fontWeight: 700 }}>
+                                {formatCurrency(sale.value)}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                            {new Date(sale.created_at).toLocaleDateString("pt-BR", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                          {sale.source && (
+                            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+                              Origem: {sale.source.charAt(0).toUpperCase() + sale.source.slice(1)}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {contactSales.sales.length === 0 && (
+                  <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>
+                    Nenhuma venda registrada ainda.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
+                Erro ao carregar dados de vendas.
+              </div>
+            )}
           </div>
 
           {/* Tags */}

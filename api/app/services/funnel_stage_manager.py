@@ -7,42 +7,169 @@ from datetime import datetime
 
 # Mapeamento de eventos para etapas do funil
 EVENT_TO_STAGE = {
-    # Funil Longo (funnel_id = 1)
+    # ========== FUNIL LONGO (funnel_id = 1) ==========
+    
+    # FASE 1 - Lead Frio
     "USER_SENT_FIRST_MESSAGE": {
         "funnel_id": "1",
-        "stage_id": "1",  # Boas-vindas e Qualificação
+        "stage_id": "1",
         "lead_level": "frio",
-        "phase": "frio"
+        "phase": "frio",
+        "name": "Lead Frio"
     },
+    "IA_SENT_AUDIO1_BOAS_VINDAS": {
+        "funnel_id": "1",
+        "stage_id": "1",
+        "lead_level": "frio",
+        "phase": "frio",
+        "name": "Lead Frio - Áudio 1 enviado"
+    },
+    
+    # FASE 2 - Aquecimento (Descoberta da Dor)
     "USER_SENT_DOR": {
         "funnel_id": "1",
-        "stage_id": "2",  # Diagnóstico de Dores
+        "stage_id": "2",
         "lead_level": "morno",
-        "phase": "aquecimento"
+        "phase": "aquecimento",
+        "name": "Aquecimento - Dor detectada"
+    },
+    "IA_SENT_AUDIO2_DOR": {
+        "funnel_id": "1",
+        "stage_id": "2",
+        "lead_level": "morno",
+        "phase": "aquecimento",
+        "name": "Aquecimento - Áudio 2 enviado"
+    },
+    "IA_SENT_PROVAS_SOCIAIS": {
+        "funnel_id": "1",
+        "stage_id": "2",
+        "lead_level": "morno",
+        "phase": "aquecimento",
+        "name": "Aquecimento - Provas sociais enviadas"
+    },
+    
+    # FASE 3 - Aquecido (Objeção ou Interesse)
+    "USER_SENT_OBJECAO": {
+        "funnel_id": "1",
+        "stage_id": "3",
+        "lead_level": "morno",
+        "phase": "aquecido",
+        "name": "Aquecido - Objeção detectada"
+    },
+    "USER_SENT_INTERESSE": {
+        "funnel_id": "1",
+        "stage_id": "3",
+        "lead_level": "morno",
+        "phase": "aquecido",
+        "name": "Aquecido - Interesse detectado"
+    },
+    "IA_QUEBROU_OBJECAO": {
+        "funnel_id": "1",
+        "stage_id": "3",
+        "lead_level": "morno",
+        "phase": "aquecido",
+        "name": "Aquecido - Objeção quebrada"
+    },
+    
+    # FASE 4 - Quente (Apresentação dos Planos)
+    "USER_PEDIU_PLANOS": {
+        "funnel_id": "1",
+        "stage_id": "4",
+        "lead_level": "quente",
+        "phase": "quente",
+        "name": "Quente - Planos solicitados"
     },
     "IA_SENT_EXPLICACAO_PLANOS": {
         "funnel_id": "1",
-        "stage_id": "3",  # Explicação dos Planos
-        "lead_level": "morno",
-        "phase": "aquecido"
+        "stage_id": "4",
+        "lead_level": "quente",
+        "phase": "quente",
+        "name": "Quente - Planos apresentados"
     },
+    
+    # FASE 5 - Fechamento
     "USER_ESCOLHEU_PLANO": {
         "funnel_id": "1",
-        "stage_id": "4",  # Fechamento - Escolha do Plano
+        "stage_id": "5",
         "lead_level": "quente",
-        "phase": "quente"
+        "phase": "quente",
+        "name": "Fechamento - Plano escolhido"
     },
+    "IA_ENVIOU_LINK_CHECKOUT": {
+        "funnel_id": "1",
+        "stage_id": "5",
+        "lead_level": "quente",
+        "phase": "quente",
+        "name": "Fechamento - Link enviado"
+    },
+    
+    # FASE 6 - Pós-Venda
     "EDUZZ_WEBHOOK_APROVADA": {
         "funnel_id": "1",
-        "stage_id": "5",  # Pós-Compra
+        "stage_id": "6",
         "lead_level": "quente",
-        "phase": "assinante"
+        "phase": "assinante",
+        "name": "Pós-Venda - Compra aprovada"
     },
-    "TEMPO_LIMITE_PASSOU": {
+    "IA_ENVIOU_ACESSOS": {
         "funnel_id": "1",
-        "stage_id": "6",  # Recuperação Pós Não Compra
+        "stage_id": "6",
         "lead_level": "quente",
-        "phase": "recuperacao"
+        "phase": "assinante",
+        "name": "Pós-Venda - Acessos enviados"
+    },
+    
+    # FASE 7 - Carrinho Abandonado
+    "CARRINHO_ABANDONADO": {
+        "funnel_id": "1",
+        "stage_id": "7",
+        "lead_level": "quente",
+        "phase": "quente_recebeu_oferta",
+        "name": "Carrinho Abandonado"
+    },
+    "IA_ENVIOU_RECUPERACAO": {
+        "funnel_id": "1",
+        "stage_id": "7",
+        "lead_level": "quente",
+        "phase": "quente_recebeu_oferta",
+        "name": "Recuperação enviada"
+    },
+    
+    # ========== MINI FUNIL BF (funnel_id = 2) ==========
+    "BF_IMAGEM_ENVIADA": {
+        "funnel_id": "2",
+        "stage_id": "1",
+        "lead_level": "frio",
+        "phase": "frio",
+        "name": "BF - Imagem enviada"
+    },
+    "BF_AUDIO_OFERTA_ENVIADO": {
+        "funnel_id": "2",
+        "stage_id": "2",
+        "lead_level": "morno",
+        "phase": "aquecimento",
+        "name": "BF - Áudio de oferta enviado"
+    },
+    "BF_FOLLOWUP_1_ENVIADO": {
+        "funnel_id": "2",
+        "stage_id": "3",
+        "lead_level": "morno",
+        "phase": "aquecido",
+        "name": "BF - Follow-up 1 enviado"
+    },
+    "BF_FOLLOWUP_2_ENVIADO": {
+        "funnel_id": "2",
+        "stage_id": "4",
+        "lead_level": "morno",
+        "phase": "aquecido",
+        "name": "BF - Follow-up 2 enviado"
+    },
+    "BF_FOLLOWUP_3_ENVIADO": {
+        "funnel_id": "2",
+        "stage_id": "5",
+        "lead_level": "morno",
+        "phase": "aquecido",
+        "name": "BF - Follow-up 3 enviado"
     },
 }
 
@@ -103,11 +230,14 @@ def detect_stage_from_message(
     if is_first_message or not thread_meta or not thread_meta.get("stage_id"):
         return "USER_SENT_FIRST_MESSAGE"
     
-    # Detecta se mencionou dor/objetivo
+    # Detecta se mencionou dor/objetivo (FASE 2)
     dor_keywords = [
+        "perder gordura", "pochete", "flacidez", "celulite",
+        "ganhar massa", "bunda", "coxas", "falta de foco",
+        "dieta", "alimentação", "constância",
         "dor", "problema", "incomoda", "quero emagrecer", "quero perder peso",
-        "barriga", "flacidez", "celulite", "autoestima", "vergonha",
-        "não gosto", "me incomoda", "me derruba", "travamento"
+        "barriga", "autoestima", "vergonha",
+        "não gosto", "me incomoda", "me derruba", "travamento", "objetivo"
     ]
     
     if any(keyword in message_lower for keyword in dor_keywords):
@@ -116,9 +246,42 @@ def detect_stage_from_message(
         if current_stage == "1":
             return "USER_SENT_DOR"
     
-    # Detecta escolha de plano
-    plano_keywords = ["mensal", "anual", "plano mensal", "plano anual", "quero o mensal", "quero o anual"]
-    if any(keyword in message_lower for keyword in plano_keywords):
+    # Detecta objeções (FASE 3)
+    objection_keywords = [
+        "tô sem tempo", "tô sem dinheiro", "não sei se consigo",
+        "não sei se funciona pra mim", "sem tempo", "sem dinheiro"
+    ]
+    if any(keyword in message_lower for keyword in objection_keywords):
+        return "USER_SENT_OBJECAO"
+    
+    # Detecta interesse alto (FASE 3)
+    interest_keywords = [
+        "sim", "pode ser", "legal", "ok", "entendi", "faz sentido",
+        "gostei", "quero saber", "me explica", "conta pra mim",
+        "pode", "quero", "me mostra"
+    ]
+    if any(keyword in message_lower for keyword in interest_keywords):
+        current_stage = thread_meta.get("stage_id", "2")
+        if current_stage == "2":  # Se está na fase 2, avança para fase 3
+            return "USER_SENT_INTERESSE"
+    
+    # Detecta pedido de planos (FASE 4)
+    planos_keywords = [
+        "preço", "preços", "quanto custa", "valores", "planos",
+        "quero ver os precos", "me passa os preços", "quais os valores",
+        "quero saber dos planos", "me mostra os planos", "investimento",
+        "como funciona o pagamento", "quais são os planos"
+    ]
+    if any(keyword in message_lower for keyword in planos_keywords):
+        return "USER_PEDIU_PLANOS"
+    
+    # Detecta escolha de plano (FASE 5)
+    plano_anual_keywords = ["anual", "plano anual", "quero o anual", "vou querer o anual"]
+    plano_mensal_keywords = ["mensal", "plano mensal", "quero o mensal", "vou querer o mensal"]
+    
+    if any(keyword in message_lower for keyword in plano_anual_keywords):
+        return "USER_ESCOLHEU_PLANO"
+    if any(keyword in message_lower for keyword in plano_mensal_keywords):
         return "USER_ESCOLHEU_PLANO"
     
     return None

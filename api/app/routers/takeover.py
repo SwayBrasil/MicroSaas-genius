@@ -42,8 +42,12 @@ def human_reply(thread_id: int, body: HumanReplyBody,
 
     try:
         sid = twilio_provider.send_text(phone, body.content)  # <- síncrono, sem await
-        print(f"[HUMAN-REPLY][TWILIO] thread={t.id} to={phone} sid={sid}")
-        sent = True
+        if sid:
+            print(f"[HUMAN-REPLY][TWILIO] thread={t.id} to={phone} sid={sid}")
+            sent = True
+        else:
+            print(f"[HUMAN-REPLY][TWILIO] ⚠️ Twilio não configurado. Mensagem não enviada.")
+            sent = False
     except Exception as e:
         print(f"[HUMAN-REPLY][TWILIO][ERROR] thread={t.id} to={phone} err={e}")
         sent = False

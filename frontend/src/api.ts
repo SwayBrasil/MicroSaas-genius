@@ -382,4 +382,127 @@ export async function updateContactReminder(
   return data;
 }
 
+// ==================== Billing / The Members ====================
+export type Product = {
+  id: number;
+  external_product_id: string;
+  title: string;
+  type?: string;
+  status?: string;
+  source?: string;  // "eduzz", "themembers", "manual"
+};
+
+export type SubscriptionStatus = {
+  has_subscription: boolean;
+  is_active: boolean;
+  subscription_id?: number;
+  product_title?: string;
+  status?: string;
+  expires_at?: string;
+  themembers_user_id?: string;
+};
+
+export type Subscription = {
+  id: number;
+  status: string;
+  product_title?: string;
+  started_at?: string;
+  expires_at?: string;
+  source?: string;
+  themembers_user_id?: string;
+};
+
+export async function listProducts(source?: string): Promise<Product[]> {
+  const params = source ? { source } : {};
+  const { data } = await api.get<Product[]>("/billing/products", { params });
+  return data;
+}
+
+export async function getContactSubscriptionStatus(contactId: number): Promise<SubscriptionStatus> {
+  const { data } = await api.get<SubscriptionStatus>(`/billing/contacts/${contactId}/subscription-status`);
+  return data;
+}
+
+export async function getContactSubscriptions(contactId: number): Promise<Subscription[]> {
+  const { data } = await api.get<Subscription[]>(`/billing/contacts/${contactId}/subscriptions`);
+  return data;
+}
+
+// ==================== Analytics ====================
+export type AnalyticsSummary = {
+  total_threads: number;
+  total_contacts: number;
+  total_sales: number;
+  total_revenue: number;  // em centavos
+  sales_with_conversation: number;
+  sales_without_conversation: number;
+  total_subscriptions: number;
+  active_subscriptions: number;
+};
+
+export type SalesByDay = {
+  date: string;
+  qtd_vendas: number;
+  valor_total: number;  // em centavos
+};
+
+export type ContactSales = {
+  contact_id: number;
+  contact_name: string;
+  contact_email: string;
+  sales: Array<{
+    id: number;
+    source: string;
+    event: string;
+    order_id: string | null;
+    value: number | null;
+    created_at: string;
+    themembers_user_id: string | null;
+  }>;
+  subscriptions: Array<{
+    id: number;
+    status: string;
+    product_title: string | null;
+    started_at: string | null;
+    expires_at: string | null;
+    source: string | null;
+    themembers_user_id: string | null;
+  }>;
+  total_sales: number;
+  total_revenue: number;
+  total_subscriptions: number;
+  active_subscriptions: number;
+};
+
+export type Conversions = {
+  period_days: number;
+  threads_created: number;
+  sales_total: number;
+  sales_with_conversation: number;
+  sales_without_conversation: number;
+  conversion_rate: number;
+  threads_by_origin: Array<{ origin: string; count: number }>;
+  sales_by_origin: Array<{ origin: string; count: number }>;
+};
+
+export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
+  const { data } = await api.get<AnalyticsSummary>("/analytics/summary");
+  return data;
+}
+
+export async function getSalesByDay(days: number = 30): Promise<SalesByDay[]> {
+  const { data } = await api.get<SalesByDay[]>(`/analytics/sales-by-day?days=${days}`);
+  return data;
+}
+
+export async function getContactSales(contactId: number): Promise<ContactSales> {
+  const { data } = await api.get<ContactSales>(`/analytics/contacts/${contactId}/sales`);
+  return data;
+}
+
+export async function getConversions(days: number = 30): Promise<Conversions> {
+  const { data } = await api.get<Conversions>(`/analytics/conversions?days=${days}`);
+  return data;
+}
+
 export default api;

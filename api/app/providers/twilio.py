@@ -12,7 +12,18 @@ FROM = os.getenv("TWILIO_WHATSAPP_FROM", "whatsapp:+5561947565536")
 # Limite de caracteres do Twilio (1600 para mensagens concatenadas)
 TWILIO_MAX_LENGTH = 1600
 
-_client = Client(ACCOUNT_SID, AUTH_TOKEN)
+# Inicializa cliente apenas se as credenciais estiverem configuradas
+_client = None
+if ACCOUNT_SID and AUTH_TOKEN:
+    try:
+        _client = Client(ACCOUNT_SID, AUTH_TOKEN)
+    except Exception:
+        pass
+
+
+def is_configured() -> bool:
+    """Verifica se o Twilio está configurado corretamente"""
+    return bool(ACCOUNT_SID and AUTH_TOKEN and FROM)
 
 
 def _fmt_whatsapp(num: str) -> str:
@@ -173,10 +184,13 @@ def send_text(to_e164: str, body: str, sender: str = "BOT") -> str:
     sender: "BOT" ou "HUMANO" (apenas para log)
     Retorna o SID da primeira mensagem enviada.
     """
-    if not ACCOUNT_SID or not AUTH_TOKEN or not FROM:
-        raise RuntimeError(
-            "❌ TWILIO envs faltando (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_WHATSAPP_FROM)"
-        )
+    if not is_configured():
+        print(f"\033[93m[TWILIO] ⚠️ Twilio não configurado. Mensagem não enviada: {body[:50]}...\033[0m")
+        return ""
+    
+    if not _client:
+        print(f"\033[93m[TWILIO] ⚠️ Cliente Twilio não inicializado. Mensagem não enviada.\033[0m")
+        return ""
 
     to = _fmt_whatsapp(to_e164)
     from_ = FROM if FROM.startswith("whatsapp:") else f"whatsapp:{FROM}"
@@ -235,10 +249,14 @@ def send_audio(to_e164: str, audio_url: str, sender: str = "BOT") -> str:
     print(f"\033[93m[TWILIO][send_audio]    audio_url: {audio_url}\033[0m")
     print(f"\033[93m[TWILIO][send_audio]    sender: {sender}\033[0m")
     
-    if not ACCOUNT_SID or not AUTH_TOKEN or not FROM:
-        error_msg = "❌ TWILIO envs faltando (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN / TWILIO_WHATSAPP_FROM)"
-        print(f"\033[91m[TWILIO][send_audio] {error_msg}\033[0m")
-        raise RuntimeError(error_msg)
+    if not is_configured():
+        error_msg = "⚠️ Twilio não configurado. Áudio não enviado."
+        print(f"\033[93m[TWILIO][send_audio] {error_msg}\033[0m")
+        return ""
+    
+    if not _client:
+        print(f"\033[93m[TWILIO][send_audio] ⚠️ Cliente Twilio não inicializado. Áudio não enviado.\033[0m")
+        return ""
 
     to = _fmt_whatsapp(to_e164)
     from_ = FROM if FROM.startswith("whatsapp:") else f"whatsapp:{FROM}"
@@ -267,6 +285,50 @@ def send_audio(to_e164: str, audio_url: str, sender: str = "BOT") -> str:
         return msg.sid
     except Exception as e:
         print(f"\033[91m[TWILIO][send_audio] ❌ ERRO ao enviar áudio: {str(e)}\033[0m")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
+def send_image(to_e164: str, image_url: str, sender: str = "BOT") -> str:
+    """
+    Envia imagem pelo WhatsApp via Twilio.
+    
+    Args:
+        to_e164: Número do destinatário (formato E.164)
+        image_url: URL pública da imagem (deve ser acessível pelo Twilio)
+        sender: "BOT" ou "HUMANO" (apenas para log)
+    
+    Returns:
+        SID da mensagem enviada
+    """
+    if not is_configured():
+        error_msg = "⚠️ Twilio não configurado. Imagem não enviada."
+        print(f"\033[93m[TWILIO][send_image] {error_msg}\033[0m")
+        return ""
+    
+    if not _client:
+        print(f"\033[93m[TWILIO][send_image] ⚠️ Cliente Twilio não inicializado. Imagem não enviada.\033[0m")
+        return ""
+
+    to = _fmt_whatsapp(to_e164)
+    from_ = FROM if FROM.startswith("whatsapp:") else f"whatsapp:{FROM}"
+    
+    try:
+        msg = _client.messages.create(
+            to=to,
+            from_=from_,
+            media_url=[image_url]  # Twilio aceita lista de URLs de mídia
+        )
+        
+        if sender.upper() == "BOT":
+            print(f"\033[94m[TWILIO][BOT] → {to} | IMAGEM | SID={msg.sid} | URL={image_url}\033[0m")
+        else:
+            print(f"\033[92m[TWILIO][HUMANO] → {to} | IMAGEM | SID={msg.sid} | URL={image_url}\033[0m")
+        
+        return msg.sid
+    except Exception as e:
+        print(f"\033[91m[TWILIO][send_image] ❌ ERRO ao enviar imagem: {str(e)}\033[0m")
         import traceback
         traceback.print_exc()
         raise

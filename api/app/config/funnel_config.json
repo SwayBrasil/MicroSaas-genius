@@ -1,0 +1,341 @@
+{
+  "funnels": {
+    "funil_longo": {
+      "id": "1",
+      "name": "Funil Longo - Principal",
+      "description": "Fluxo completo para leads orgânicos, inbound, respostas de storie",
+      "phases": {
+        "fase_1_lead_frio": {
+          "id": "1",
+          "name": "Lead Frio",
+          "lead_level": "frio",
+          "triggers": {
+            "entry_keywords": [
+              "oi paloma",
+              "eae",
+              "quero saber como funciona o life",
+              "preciso fazer algo por mim mesma",
+              "quero ficar gostosa",
+              "quero saber do life",
+              "quero emagrecer",
+              "quero transformar",
+              "life"
+            ]
+          },
+          "actions": {
+            "audio": "audio1_boas_vindas",
+            "audio_file": "00000011-AUDIO-2025-11-24-22-40-30.opus",
+            "texts": []
+          },
+          "next_phase": "fase_2_aquecimento"
+        },
+        "fase_2_aquecimento": {
+          "id": "2",
+          "name": "Descoberta da Dor",
+          "lead_level": "morno",
+          "triggers": {
+            "dor_keywords": [
+              "perder gordura",
+              "pochete",
+              "flacidez",
+              "celulite",
+              "ganhar massa",
+              "bunda",
+              "coxas",
+              "falta de foco",
+              "dieta",
+              "alimentação",
+              "constância",
+              "barriga",
+              "incomoda",
+              "quero emagrecer",
+              "quero perder peso",
+              "autoestima",
+              "vergonha",
+              "não gosto",
+              "me incomoda",
+              "me derruba",
+              "travamento",
+              "objetivo"
+            ],
+            "dor_types": {
+              "perder_gordura_pochete": {
+                "audio": "audio2_dor_generica",
+                "audio_file": "00000017-AUDIO-2025-11-24-22-47-05.opus"
+              },
+              "flacidez_celulite": {
+                "audio": "audio2_dor_generica",
+                "audio_file": "00000017-AUDIO-2025-11-24-22-47-05.opus"
+              },
+              "ganhar_massa": {
+                "audio": "audio2_dor_generica",
+                "audio_file": "00000017-AUDIO-2025-11-24-22-47-05.opus"
+              },
+              "falta_foco": {
+                "audio": "audio2_dor_generica",
+                "audio_file": "00000017-AUDIO-2025-11-24-22-47-05.opus"
+              },
+              "dieta_alimentacao": {
+                "audio": "audio2_dor_generica",
+                "audio_file": "00000017-AUDIO-2025-11-24-22-47-05.opus"
+              },
+              "generico": {
+                "audio": "audio2_dor_generica",
+                "audio_file": "00000017-AUDIO-2025-11-24-22-47-05.opus"
+              }
+            }
+          },
+          "actions": {
+            "audio": "audio2_dor_generica",
+            "images": [
+              "img_resultado_01",
+              "img_resultado_02",
+              "img_resultado_03",
+              "img_resultado_04",
+              "img_resultado_05",
+              "img_resultado_06",
+              "img_resultado_07",
+              "img_resultado_08"
+            ],
+            "final_text": "Me conta aqui gata, o que tá faltando pra tu dar esse passo? 👯‍♀️✨"
+          },
+          "next_phase": "fase_3_aquecido"
+        },
+        "fase_3_aquecido": {
+          "id": "3",
+          "name": "Objeção ou Interesse Alto",
+          "lead_level": "morno",
+          "triggers": {
+            "objection_keywords": [
+              "tô sem tempo",
+              "tô sem dinheiro",
+              "não sei se consigo",
+              "não sei se funciona pra mim"
+            ],
+            "interest_keywords": [
+              "sim",
+              "pode ser",
+              "legal",
+              "ok",
+              "entendi",
+              "faz sentido",
+              "gostei",
+              "quero saber",
+              "me explica",
+              "conta pra mim"
+            ]
+          },
+          "actions": {
+            "objection_response": "Perfeitaaaa, posso te explicar melhor sobre os planos?",
+            "interest_response": "Perfeitaaaa, posso te explicar melhor sobre os planos?"
+          },
+          "next_phase": "fase_4_quente"
+        },
+        "fase_4_quente": {
+          "id": "4",
+          "name": "Apresentação dos Planos",
+          "lead_level": "quente",
+          "triggers": {
+            "accept_keywords": [
+              "sim",
+              "pode",
+              "pode ser",
+              "quero",
+              "quero saber",
+              "me mostra",
+              "conta"
+            ]
+          },
+          "actions": {
+            "audio": "audio3_explicacao_planos",
+            "audio_file": "00000032-AUDIO-2025-11-24-22-51-49.opus",
+            "texts": [
+              {
+                "type": "plano_mensal",
+                "content": "*✅ Plano Mensal – R$69,90/mês*\n\n• Acesso à base do LIFE: treinos, planos alimentares, aulas sobre disciplina e motivação.\n• Pode cancelar quando quiser."
+              },
+              {
+                "type": "plano_anual",
+                "content": "*🔥 Plano Anual – R$598,80 (ou 12x de R$49,90)*\n\n• Acesso COMPLETO a tudo no LIFE: treinos, planos alimentares, aulas extras com médicas, nutricionistas e psicólogas.\n• Inclui o módulo exclusivo do Shape Slim.\n• Pode ser parcelado em até 12x sem comprometer o limite do cartão."
+              },
+              {
+                "type": "pergunta_final",
+                "content": "Agora me fala, gata: qual plano faz mais sentido pra você? 💬🔥"
+              }
+            ]
+          },
+          "next_phase": "fase_5_fechamento"
+        },
+        "fase_5_fechamento": {
+          "id": "5",
+          "name": "Fechamento",
+          "lead_level": "quente",
+          "triggers": {
+            "plano_anual_keywords": [
+              "anual",
+              "plano anual",
+              "quero o anual",
+              "vou querer o anual"
+            ],
+            "plano_mensal_keywords": [
+              "mensal",
+              "plano mensal",
+              "quero o mensal",
+              "vou querer o mensal"
+            ]
+          },
+          "actions": {
+            "plano_anual": {
+              "text": "*Amoo!🔥 Bora garantir sua transformação agoraaaa!!*\n\nAqui está o link pra você finalizar:\n\n➡️ https://edzz.la/DO408?a=10554737\n\n_💳 Antes de comprar, ajusta o limite do cartão pra R$50 só uma vez. O sistema cobra só a parcela mensal._\n\nAssim que finalizar, me avisa que já te envio todos os acessos... Fico te esperando aqui!!"
+            },
+            "plano_mensal": {
+              "text": "*🔥 Bora garantir sua transformação agoraaaa!!*\n\nAqui tá o link do mensal pra você finalizar:\n\n➡️ https://edzz.la/GQRLF?a=10554737\n\nAssim que finalizar, me avisa que já te envio todos os acessos... Fico te esperando aqui!!"
+            }
+          },
+          "next_phase": "fase_6_pos_venda"
+        },
+        "fase_6_pos_venda": {
+          "id": "6",
+          "name": "Confirmação de Compra (Webhook Eduzz)",
+          "lead_level": "quente",
+          "triggers": {
+            "webhook_event": "eduzz_sale_approved"
+          },
+          "actions": {
+            "text_template": "*AGORA VOCÊ FAZ PARTE DO LIFE!! Vamos nessa juntas 🩷*\n\n[NOME], acessos enviados para o seu e-mail gatinha. Confere o spam também!\n\n📲 Baixa o app:\n\nAndroid: https://play.google.com/store/apps/details?id=com.lifeversao.mobile\n\niPhone: https://apps.apple.com/us/app/life-sua-melhor-vers%C3%A3o/id6535646977\n\n📢 Grupo de avisos no WhatsApp:\n👉 https://chat.whatsapp.com/CMXnSC6BuDuDiBfeEWWiMt\n\nLink de primeiro acesso (24h):\n[LINK PERSONALIZADO]\n\n💬 Suporte de treinos e dieta:\n👉 https://wa.link/f6fqv4\n\n💻 Suporte técnico:\n👉 https://wa.me/message/NNSPXOMMJ3YJB1\n\nBora seguir focada? 🚀🔥"
+          },
+          "next_phase": null
+        },
+        "fase_7_carrinho_abandonado": {
+          "id": "7",
+          "name": "Carrinho Abandonado",
+          "lead_level": "quente",
+          "triggers": {
+            "timeout_minutes": 30,
+            "condition": "não_comprou_apos_plano"
+          },
+          "actions": {
+            "audio": "audio_recuperacao_50",
+            "audio_file": "00000041-AUDIO-2025-11-24-22-56-22.opus",
+            "followup_text": "Ooi minha gata, percebi que você chegou até o final da sua inscrição no LIFE mas não concluiu 😢\n\n*Seu plano já está pronto pra começar hoje!*\n\n👉 Te preparei um link especial com *50% DE DESCONTO SÓ HOJE!!!*\n\nQuer saber mais? 💪✨"
+          },
+          "next_phase": null
+        }
+      }
+    },
+    "mini_funil_bf": {
+      "id": "2",
+      "name": "Mini Funil - Black Friday / Promo",
+      "description": "Funil paralelo para campanhas e promoções",
+      "phases": {
+        "fase_1_imagem_campanha": {
+          "id": "1",
+          "name": "Envio da Imagem da Campanha",
+          "lead_level": "frio",
+          "actions": {
+            "images": [
+              "img_bf_01",
+              "img_bf_02"
+            ]
+          },
+          "next_phase": "fase_2_audio_promo"
+        },
+        "fase_2_audio_promo": {
+          "id": "2",
+          "name": "Áudio Oficial da Promo",
+          "lead_level": "morno",
+          "actions": {
+            "audio": "audio_bf_oferta",
+            "audio_file": "00000047.opus"
+          },
+          "next_phase": "fase_3_followup_1"
+        },
+        "fase_3_followup_1": {
+          "id": "3",
+          "name": "Follow-up 1 (sem resposta)",
+          "lead_level": "morno",
+          "triggers": {
+            "timeout_minutes": 60,
+            "condition": "sem_resposta"
+          },
+          "actions": {
+            "audio": "audio_bf_follow1",
+            "audio_file": "00000049.opus"
+          },
+          "next_phase": "fase_4_followup_2"
+        },
+        "fase_4_followup_2": {
+          "id": "4",
+          "name": "Follow-up 2",
+          "lead_level": "morno",
+          "triggers": {
+            "timeout_minutes": 120,
+            "condition": "sem_resposta"
+          },
+          "actions": {
+            "audio": "audio_bf_follow2",
+            "audio_file": "00000060.opus"
+          },
+          "next_phase": "fase_5_followup_3"
+        },
+        "fase_5_followup_3": {
+          "id": "5",
+          "name": "Follow-up 3",
+          "lead_level": "morno",
+          "triggers": {
+            "timeout_minutes": 240,
+            "condition": "sem_resposta"
+          },
+          "actions": {
+            "audio": "audio_bf_follow3",
+            "audio_file": "00000063.opus"
+          },
+          "next_phase": null
+        }
+      }
+    }
+  },
+  "lead_states": {
+    "frio": {
+      "name": "Lead Frio",
+      "description": "Chegou agora sem contexto",
+      "score_range": [0, 20]
+    },
+    "aquecimento": {
+      "name": "Aquecimento",
+      "description": "Já ouviu áudio 1",
+      "score_range": [21, 40]
+    },
+    "aquecido": {
+      "name": "Aquecido",
+      "description": "Já respondeu dor e recebeu provas sociais",
+      "score_range": [41, 60]
+    },
+    "quente": {
+      "name": "Quente",
+      "description": "Já pediu planos / viu planos",
+      "score_range": [61, 80]
+    },
+    "assinante": {
+      "name": "Assinante",
+      "description": "Webhook de compra confirmado",
+      "score_range": [81, 100]
+    },
+    "pendencia": {
+      "name": "Pendência",
+      "description": "Assinante com fatura atrasada",
+      "score_range": [0, 0]
+    },
+    "aquecido_plataforma": {
+      "name": "Aquecido (plataforma)",
+      "description": "Já criou conta na plataforma",
+      "score_range": [41, 60]
+    },
+    "quente_recebeu_oferta": {
+      "name": "Quente (recebeu oferta)",
+      "description": "Recebeu promo / desconto / link especial",
+      "score_range": [61, 80]
+    }
+  }
+}
+

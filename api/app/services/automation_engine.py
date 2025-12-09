@@ -84,43 +84,82 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
     """
     message_lower = message.lower().strip()
     current_stage = thread_meta.get("lead_stage") if thread_meta else None
+    print(f"[AUTOMATION][detect_funil_longo_trigger] Mensagem: '{message_lower}', Stage atual: {current_stage}")
+    
+    # 🚨 PRIORIDADE: Verifica se há menção a preços/planos/funcionamento ANTES de qualquer outra coisa
+    # Se mencionar preços/planos/funcionamento, NÃO dispara áudio 1, deixa o LLM lidar (Fase 3)
+    preco_keywords = [
+        "preço", "preços", "quanto custa", "valores", "planos", "opções de plano",
+        "quero ver os precos", "me passa os preços", "quais os valores",
+        "quero saber dos planos", "me mostra os planos", "investimento"
+    ]
+    
+    funcionamento_keywords = [
+        "como funciona", "como é", "me explica", "me fala mais", "conta pra mim"
+    ]
+    
+    # Se mencionar preços, NÃO dispara automação - deixa LLM responder com Fase 3
+    if any(keyword in message_lower for keyword in preco_keywords):
+        return None
     
     # Gatilho de entrada (primeira mensagem ou sem stage definido)
     if not current_stage or current_stage == FUNIL_LONGO_FASE_1_FRIO:
+        # Palavras-chave de entrada (verifica ANTES de verificar "como funciona")
         entry_keywords = [
             "quero saber do life",
-            "como funciona o life",
             "quero ser gostosa",
             "quero emagrecer",
             "quero transformar",
+            "preciso fazer algo",
+            "quero mudar",
+            "quero melhorar",
+            "me tornarei",
+            "tornar",
+            "gostosa",
+            "grande gostosa",
             "life",
-            "como funciona",
             "quero saber",
         ]
         
-        # Verifica se é entrada (palavras-chave de entrada)
-        if any(keyword in message_lower for keyword in entry_keywords):
-            # Se já está em FRIO, pode ser que já enviou áudio 1, então não dispara novamente
-            # Mas se não tem stage, dispara
+        # Verifica se tem palavras-chave de entrada
+        tem_entry_keyword = any(keyword in message_lower for keyword in entry_keywords)
+        
+        # Se tem "como funciona", verifica se tem contexto de transformação
+        tem_como_funciona = any(keyword in message_lower for keyword in funcionamento_keywords)
+        tem_contexto_transformacao = any(keyword in message_lower for keyword in [
+            "quero ser gostosa", "quero emagrecer", "quero transformar", 
+            "preciso fazer algo", "quero mudar", "quero melhorar",
+            "me tornarei", "tornar", "gostosa", "grande gostosa"
+        ])
+        
+        # Se tem palavra-chave de entrada OU (tem "como funciona" E tem contexto de transformação)
+        if tem_entry_keyword or (tem_como_funciona and tem_contexto_transformacao):
+            # Se não tem stage, dispara ENTRY_FUNIL_LONGO
             if not current_stage:
                 return "ENTRY_FUNIL_LONGO"
             # Se está em FRIO mas não mencionou dor ainda, pode ser entrada repetida
             # Vamos permitir que avance para dor se mencionar objetivo
             pass
     
-    # Gatilho de dor (está na etapa 1 - FRIO)
-    if current_stage == FUNIL_LONGO_FASE_1_FRIO or not current_stage:
-        dor_keywords = [
-            "dor", "problema", "incomoda", "quero emagrecer", "quero perder peso",
-            "barriga", "flacidez", "celulite", "autoestima", "vergonha",
-            "não gosto", "me incomoda", "me derruba", "travamento", "objetivo",
-            "quero definir", "quero ganhar massa", "pochete", "papada"
+    # 🚨 PRIORIDADE: Detecta interesse em planos ANTES de detectar dor
+    # Se está em AQUECIMENTO (já recebeu áudio 2 + imagens), respostas positivas indicam interesse
+    if current_stage == FUNIL_LONGO_FASE_2_AQUECIMENTO:
+        # Palavras-chave que indicam interesse/aceitação após ver as imagens
+        interesse_keywords = [
+            "falta de vergonha", "falta vergonha", "falta vergonha na cara", "vergonha na cara",
+            "legal", "ok", "entendi", "faz sentido", "gostei", "quero saber",
+            "quero ver", "me mostra", "me fala", "conta pra mim",
+            "quero saber os planos", "quero saber sobre os planos",
+            "como funciona o pagamento", "quanto custa", "preço", "planos",
+            "quais são os planos", "me fala dos planos", "quero ver os precos",
+            "me passa os preços", "quais os valores", "investimento"
         ]
-        if any(keyword in message_lower for keyword in dor_keywords):
-            return "DOR_DETECTADA"
+        if any(keyword in message_lower for keyword in interesse_keywords):
+            print(f"[AUTOMATION] ✅ INTERESSE_PLANO detectado após Fase 2: '{message_lower}'")
+            return "INTERESSE_PLANO"
     
-    # Gatilho de interesse em plano (está em AQUECIMENTO ou AQUECIDO)
-    if current_stage in [FUNIL_LONGO_FASE_2_AQUECIMENTO, FUNIL_LONGO_FASE_3_AQUECIDO, None]:
+    # Gatilho de interesse em plano (está em AQUECIDO ou sem stage)
+    if current_stage in [FUNIL_LONGO_FASE_3_AQUECIDO, None]:
         plano_keywords = [
             "quero saber os planos",
             "quero saber sobre os planos",
@@ -133,6 +172,36 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
         ]
         if any(keyword in message_lower for keyword in plano_keywords):
             return "INTERESSE_PLANO"
+    
+    # Gatilho de dor (está na etapa 1 - FRIO ou sem stage)
+    # IMPORTANTE: Detecta dor mesmo se já está em FRIO (lead já recebeu áudio 1)
+    # MAS: Remove "vergonha" isolada - só detecta se for "vergonha" como dor (ex: "tenho vergonha")
+    # E: NÃO detecta dor se já está em AQUECIMENTO (já passou da fase de dor)
+    if current_stage == FUNIL_LONGO_FASE_2_AQUECIMENTO:
+        # Se já está em AQUECIMENTO, não detecta mais dor - deve detectar interesse em planos
+        print(f"[AUTOMATION] ⚠️ Stage é AQUECIMENTO, pulando detecção de dor (já passou dessa fase)")
+        return None
+    
+    if current_stage == FUNIL_LONGO_FASE_1_FRIO or current_stage is None:
+        dor_keywords = [
+            "dor", "problema", "incomoda", "quero emagrecer", "quero perder peso",
+            "barriga", "flacidez", "celulite", "autoestima",
+            "tenho vergonha", "sinto vergonha", "me dá vergonha", "vergonha de",
+            "não gosto", "me incomoda", "me derruba", "travamento", "objetivo",
+            "quero definir", "quero ganhar massa", "pochete", "papada",
+            "gordinha", "gordo", "gorda", "meio gordinha", "meio gordo", "meio gorda",
+            "gorda", "obesa", "obeso", "estou gorda", "me sinto gorda", "sou gorda",
+            "triste", "me sinto", "me sinto muito", "sentindo", "estou me sentindo",
+            "insatisfeita", "insatisfeito", "não gosto do meu", "não gosto da minha",
+            "evito", "não consigo", "sempre desisto", "falta disciplina",
+            "emagrecer", "emagrecer msm", "queria emagrecer", "preciso emagrecer"
+        ]
+        # Exclui "falta de vergonha" e "vergonha na cara" que indicam interesse, não dor
+        if "falta de vergonha" in message_lower or "falta vergonha na cara" in message_lower or "vergonha na cara" in message_lower:
+            return None
+        if any(keyword in message_lower for keyword in dor_keywords):
+            print(f"[AUTOMATION] ✅ DOR_DETECTADA: '{message_lower}' contém palavra-chave de dor")
+            return "DOR_DETECTADA"
     
     # Gatilho de escolha de plano (está em AQUECIDO)
     if current_stage == FUNIL_LONGO_FASE_3_AQUECIDO:
@@ -217,14 +286,7 @@ async def execute_funil_longo_action(
                 print(f"[AUTOMATION] ✅ Áudio 1 enviado com sucesso! SID: {sid}")
                 messages_sent.append(f"[Áudio enviado: 01-boas-vindas-qualificacao | SID: {sid}]")
                 
-                # Envia texto após o áudio (conforme README dos áudios)
-                followup_text = "Perfeitaaa, me conta qual é seu objetivo hoje? 🔥✨\n\nO que você mais quer transformar no seu corpo agora?"
-                try:
-                    await asyncio.to_thread(twilio_provider.send_text, phone_number, followup_text, "BOT")
-                    print(f"[AUTOMATION] ✅ Texto de follow-up enviado após áudio 1")
-                    messages_sent.append(followup_text)
-                except Exception as e2:
-                    print(f"[AUTOMATION] ⚠️ Erro ao enviar texto de follow-up: {str(e2)}")
+                # FASE 1: Apenas áudio, sem texto adicional (o LLM vai responder depois)
                     
             except Exception as e:
                 print(f"[AUTOMATION] ❌ ERRO ao enviar áudio 1: {str(e)}")
@@ -239,53 +301,14 @@ async def execute_funil_longo_action(
         metadata["messages_sent"] = messages_sent
     
     elif trigger == "DOR_DETECTADA":
-        # Envia áudio 2 (dor genérica) + provas sociais
-        audio_path = get_audio_path("audio2_dor_generica")
-        if not audio_path:
-            print(f"[AUTOMATION] ❌ Áudio 2 não encontrado no mapeamento")
-            messages_sent.append("[Erro: áudio 2 não encontrado]")
-        else:
-            public_base = os.getenv("PUBLIC_BASE_URL", "")
-            files_base = os.getenv("PUBLIC_FILES_BASE_URL", "")
-            
-            if public_base and "localhost" not in public_base:
-                base_url = public_base.rstrip("/")
-            elif files_base and "localhost" not in files_base:
-                base_url = files_base.rstrip("/")
-            else:
-                base_url = "http://localhost:8000"
-            
-            audio_path_clean = audio_path.lstrip("/")
-            if audio_path_clean.startswith("audios/"):
-                audio_path_clean = audio_path_clean[7:]
-            audio_url = f"{base_url}/audios/{audio_path_clean}"
-            
-            print(f"[AUTOMATION] 🎵 Enviando áudio 2: {audio_url}")
-            try:
-                await asyncio.to_thread(twilio_provider.send_audio, phone_number, audio_url, "BOT")
-                print(f"[AUTOMATION] ✅ Áudio 2 enviado com sucesso para {phone_number}")
-                messages_sent.append("[Áudio enviado: 02-dor-generica]")
-            except Exception as e:
-                print(f"[AUTOMATION] ❌ ERRO ao enviar áudio 2: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                messages_sent.append(f"[Erro ao enviar áudio 2: {str(e)}]")
-        
-        # Envia provas sociais (imagens)
-        # TODO: Implementar envio de múltiplas imagens quando send_image estiver disponível
-        
-        # Envia texto de follow-up
-        followup_text = "Me conta aqui gata, o que tá faltando pra tu dar esse passo? 👯‍♀️✨"
-        try:
-            await asyncio.to_thread(twilio_provider.send_text, phone_number, followup_text, "BOT")
-            messages_sent.append(followup_text)
-        except Exception as e:
-            print(f"[AUTOMATION] ❌ ERRO ao enviar texto de follow-up: {str(e)}")
+        # FASE 2: Automação NÃO envia nada, deixa LLM processar
+        # O LLM vai enviar: áudio 2 + 8 imagens + texto final
+        # Isso evita duplicação e garante que o LLM escolha o áudio correto baseado na dor
+        print(f"[AUTOMATION] 🎯 Fase 2 detectada (dor), deixando LLM processar")
         
         new_stage = FUNIL_LONGO_FASE_2_AQUECIMENTO
-        metadata["audio_sent"] = "02-dor-generica"
-        metadata["images_sent"] = "prova-social"
-        metadata["event"] = "IA_SENT_AUDIO_DOR"
+        metadata["event"] = "DOR_DETECTADA"
+        metadata["stage"] = "fase_2_aquecimento"
         metadata["messages_sent"] = messages_sent
     
     elif trigger == "INTERESSE_PLANO":
@@ -409,12 +432,24 @@ async def process_automation(
     # 2. DETECÇÃO DE GATILHOS DO FUNIL LONGO
     trigger = detect_funil_longo_trigger(message, thread_meta)
     if trigger:
-        print(f"[AUTOMATION] 🎯 Gatilho detectado: {trigger}")
+        print(f"[AUTOMATION] 🎯 Gatilho detectado: {trigger} (mensagem: '{message[:100]}', stage: {thread_meta.get('lead_stage')})")
         new_stage, metadata = await execute_funil_longo_action(
             trigger, phone_number, thread_meta, db_session, thread_id
         )
-        # Se executou ação, NÃO deve chamar LLM
-        return new_stage, metadata, True  # should_stop=True significa "não chame LLM"
+        # FASE 1 (ENTRY_FUNIL_LONGO): Automação envia apenas áudio, NÃO chama LLM (aguarda resposta da lead)
+        # FASE 2 (DOR_DETECTADA): Automação não envia nada, LLM processa tudo
+        # Outras fases: Automação completa, não chama LLM
+        if trigger == "ENTRY_FUNIL_LONGO":
+            # Fase 1: automação já enviou áudio, não precisa chamar LLM agora
+            metadata["event"] = trigger
+            return new_stage, metadata, True  # should_skip=True: não chame LLM, aguarde resposta da lead
+        elif trigger == "DOR_DETECTADA":
+            # Fase 2: automação não enviou nada, LLM deve processar
+            metadata["event"] = trigger
+            return new_stage, metadata, False  # should_skip=False: LLM ainda deve responder
+        else:
+            # Outras fases: automação completa, não chama LLM
+            return new_stage, metadata, True  # should_skip=True: não chame LLM
     
     # 3. Se não detectou gatilho, retorna None (IA processa normalmente)
     return None, {}, False
