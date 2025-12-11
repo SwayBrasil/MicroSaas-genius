@@ -51,6 +51,7 @@ export type Thread = {
   origin?: string | null;
   lead_score?: number | null;
   lead_level?: "frio" | "morno" | "quente" | null;
+  lead_stage?: string | null;  // Estágio atual: "frio", "aquecimento", "aquecido", "quente", etc.
   metadata?: any;
   contact_name?: string | null;  // Nome do contato associado à thread
   last_message?: string | null;  // Preview da última mensagem

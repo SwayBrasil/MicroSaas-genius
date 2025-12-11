@@ -87,7 +87,7 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
     print(f"[AUTOMATION][detect_funil_longo_trigger] Mensagem: '{message_lower}', Stage atual: {current_stage}")
     
     # 🚨 PRIORIDADE: Verifica se há menção a preços/planos/funcionamento ANTES de qualquer outra coisa
-    # Se mencionar preços/planos/funcionamento, NÃO dispara áudio 1, deixa o LLM lidar (Fase 3)
+    # MAS: Se já está em AQUECIMENTO, deve PERMITIR detecção de INTERESSE_PLANO
     preco_keywords = [
         "preço", "preços", "quanto custa", "valores", "planos", "opções de plano",
         "quero ver os precos", "me passa os preços", "quais os valores",
@@ -98,9 +98,11 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
         "como funciona", "como é", "me explica", "me fala mais", "conta pra mim"
     ]
     
-    # Se mencionar preços, NÃO dispara automação - deixa LLM responder com Fase 3
+    # Se mencionar preços E NÃO está em AQUECIMENTO, NÃO dispara automação ENTRY
+    # Mas se está em AQUECIMENTO, continua para detectar INTERESSE_PLANO
     if any(keyword in message_lower for keyword in preco_keywords):
-        return None
+        if current_stage != FUNIL_LONGO_FASE_2_AQUECIMENTO:
+            return None  # Apenas bloqueia se NÃO está em fase de aquecimento
     
     # Gatilho de entrada (primeira mensagem ou sem stage definido)
     if not current_stage or current_stage == FUNIL_LONGO_FASE_1_FRIO:

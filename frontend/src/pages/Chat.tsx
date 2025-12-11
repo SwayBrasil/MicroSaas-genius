@@ -723,6 +723,7 @@ export default function Chat() {
 
     const beScore = t.lead_score;
     const beLevel = t.lead_level;
+    const leadStage = (t as any).lead_stage; // "frio", "aquecimento", "aquecido", "quente"
 
     let msgs = msgsCache;
     if (!msgs && (!beScore || !beLevel)) {
@@ -736,8 +737,25 @@ export default function Chat() {
 
     // Usa o hook logic (mas não pode usar hook aqui, então usa as funções diretamente)
     const score = beScore ?? (msgs ? computeLeadScoreFromMessages(msgs) : 0);
-    // Prioridade: override > beLevel > calcular do score
-    const level: LeadLevel = beLevel ? beLevel : levelFromScore(score);
+    
+    // Mapeia lead_stage para lead_level (temperatura)
+    // lead_stage: "frio" | "aquecimento" | "aquecido" | "quente" | "pos_compra" | etc.
+    // lead_level: "frio" | "morno" | "quente"
+    let level: LeadLevel;
+    if (leadStage) {
+      if (leadStage === "quente" || leadStage === "pos_compra" || leadStage === "assinante") {
+        level = "quente";
+      } else if (leadStage === "aquecido" || leadStage === "fatura_pendente") {
+        level = "morno";
+      } else if (leadStage === "aquecimento") {
+        level = "morno";
+      } else {
+        level = "frio"; // "frio" ou qualquer outro
+      }
+    } else {
+      // Fallback: usa beLevel se disponível, senão calcula do score
+      level = beLevel ? beLevel : levelFromScore(score);
+    }
     
     setLeadScores((m) => ({ ...m, [String(t.id)]: { score, level } }));
   }
@@ -1844,14 +1862,16 @@ export default function Chat() {
                 }
 
                 // Busca informações do funil e etapa
-                const funnelId = (thread as any)?.funnel_id;
-                const stageId = (thread as any)?.stage_id;
+                const funnelId = (thread as any)?.funnel_id || (thread as any)?.metadata?.funnel_id;
+                const stageId = (thread as any)?.stage_id || (thread as any)?.metadata?.stage_id;
+                const leadStage = (thread as any)?.lead_stage; // "frio", "aquecimento", "aquecido", "quente", etc.
                 
                 const funnel = funnelId ? INITIAL_FUNNELS.find(f => f.id === funnelId) : null;
                 const stage = funnel && stageId ? funnel.stages.find(s => s.id === stageId) : null;
                 
                 const automationName = funnel?.name || (thread as any)?.automation_name || (thread as any)?.funnel_name || "Automação ativa";
                 const stageName = stage?.name || (thread as any)?.stage_name || ((thread as any)?.stage_id ? `Etapa #${(thread as any).stage_id}` : "Etapa atual");
+                const stageLabel = leadStage ? `${leadStage.charAt(0).toUpperCase() + leadStage.slice(1)}` : null;
                 
                 // Busca nome do áudio se houver
                 const audioName = stage?.audio_id ? INITIAL_AUDIOS.find(a => a.id === stage.audio_id)?.display_name : null;
@@ -1876,6 +1896,25 @@ export default function Chat() {
                       <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
                         📍 {stageName}
                       </div>
+                      {stageLabel && (
+                        <div style={{ 
+                          padding: "4px 10px",
+                          background: leadStage === "quente" ? "#dc262615" : leadStage === "aquecido" ? "#ef444415" : leadStage === "aquecimento" ? "#f59e0b15" : "#3b82f615",
+                          color: leadStage === "quente" ? "#dc2626" : leadStage === "aquecido" ? "#ef4444" : leadStage === "aquecimento" ? "#f59e0b" : "#3b82f6",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          display: "inline-block",
+                          marginBottom: 8,
+                        }}>
+                          {leadStage === "frio" && "❄️"}
+                          {leadStage === "aquecimento" && "🌤️"}
+                          {leadStage === "aquecido" && "🔥"}
+                          {leadStage === "quente" && "🔥🔥"}
+                          {" "}
+                          Estágio: {stageLabel}
+                        </div>
+                      )}
                       {stage && (
                         <div style={{ 
                           padding: 8,
@@ -1906,24 +1945,54 @@ export default function Chat() {
                       }}>
                         Últimas Ações
                       </div>
-                      {automationActions.length > 0 ? (
+                      {(() => {
+                        // Busca últimas mensagens do assistente (ações da automação)
+                        const recentActions = messages
+                          .filter(m => m.role === "assistant")
+                          .slice(-5) // Últimas 5 ações
+                          .reverse(); // Mais recente primeiro
+                        
+                        return recentActions.length > 0 ? (
                         <div style={{ display: "grid", gap: 8 }}>
-                          {automationActions.map((action) => {
-                            // Busca nome do áudio se for ação de áudio
-                            const audioName = action.audio_id 
-                              ? INITIAL_AUDIOS.find(a => a.id === action.audio_id)?.display_name 
-                              : null;
+                          {recentActions.map((msg) => {
+                            // Detecta tipo de ação baseado no conteúdo
+                            const content = msg.content;
+                            let actionIcon = "💬";
+                            let actionType = "Mensagem";
                             
-                            const actionIcon = action.action_type === "audio_sent" ? "🎵" :
-                                              action.action_type === "text_sent" ? "💬" :
-                                              action.action_type === "image_sent" ? "🖼️" :
-                                              action.action_type === "link_sent" ? "🔗" :
-                                              action.action_type === "stage_moved" ? "📍" :
-                                              action.action_type === "tag_added" ? "🏷️" : "⚙️";
+                            if (content.includes("[Áudio enviado:")) {
+                              actionIcon = "🎵";
+                              actionType = "Áudio enviado";
+                            } else if (content.includes("[Imagem enviada:")) {
+                              actionIcon = "🖼️";
+                              actionType = "Imagem enviada";
+                            } else if (content.includes("https://") || content.includes("http://")) {
+                              actionIcon = "🔗";
+                              actionType = "Link enviado";
+                            } else if (content.includes("[Automação executada:")) {
+                              actionIcon = "⚙️";
+                              actionType = "Automação";
+                            }
+                            
+                            // Extrai descrição curta
+                            let shortDesc = content;
+                            if (content.includes("[Áudio enviado:")) {
+                              const match = content.match(/\[Áudio enviado: ([^\]]+)\]/);
+                              shortDesc = match ? match[1] : "Áudio";
+                            } else if (content.includes("[Imagem enviada:")) {
+                              const match = content.match(/\[Imagem enviada: ([^\]]+)\]/);
+                              shortDesc = match ? match[1] : "Imagem";
+                            } else if (content.includes("[Automação executada:")) {
+                              const match = content.match(/\[Automação executada: ([^\]]+)\]/);
+                              shortDesc = match ? match[1] : "Automação";
+                            } else {
+                              // Limita texto longo
+                              shortDesc = content.length > 50 ? content.substring(0, 50) + "..." : content;
+                            }
                             
                             return (
                               <div
-                                key={action.id}
+                                key={msg.id}
                                 className="card"
                                 style={{
                                   padding: modalIsMobile ? 10 : 12,
@@ -1936,23 +2005,22 @@ export default function Chat() {
                                   width: 6, 
                                   height: 6, 
                                   borderRadius: 999, 
-                                  background: action.status === "executed" ? "#10b981" : 
-                                             action.status === "failed" ? "#dc2626" : "#f59e0b",
+                                  background: "#10b981",
                                   marginTop: 6,
                                   flexShrink: 0,
                                 }} />
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                   <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
                                     <span>{actionIcon}</span>
-                                    <span>{audioName || action.action_description}</span>
+                                    <span>{shortDesc}</span>
                                   </div>
                                   <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                    {new Date(action.executed_at).toLocaleString("pt-BR", {
+                                    {msg.created_at ? new Date(msg.created_at).toLocaleString("pt-BR", {
                                       day: "2-digit",
                                       month: "2-digit",
                                       hour: "2-digit",
                                       minute: "2-digit",
-                                    })}
+                                    }) : "Agora"}
                                   </div>
                                 </div>
                               </div>
@@ -1965,36 +2033,9 @@ export default function Chat() {
                             Nenhuma ação registrada ainda.
                           </div>
                         </div>
-                      )}
+                      );
+                      })()}
                     </div>
-
-                    {/* Ações de exemplo (mock - remover quando integrar com backend) */}
-                    {automationActions.length === 0 && (
-                      <div style={{ display: "grid", gap: 8 }}>
-                        <div className="card" style={{ padding: modalIsMobile ? 10 : 12, display: "flex", alignItems: "flex-start", gap: 10 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: 999, background: "#10b981", marginTop: 6, flexShrink: 0 }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
-                              Áudio 1 enviado
-                            </div>
-                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                              {new Date(Date.now() - 3600000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="card" style={{ padding: modalIsMobile ? 10 : 12, display: "flex", alignItems: "flex-start", gap: 10 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: 999, background: "#f59e0b", marginTop: 6, flexShrink: 0 }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>
-                              Follow-up agendado para 14:35
-                            </div>
-                            <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                              {new Date(Date.now() - 1800000).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })()}

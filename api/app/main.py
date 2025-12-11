@@ -1095,6 +1095,7 @@ def _serialize_thread(t: Thread, db: Session = None) -> dict:
         "origin": getattr(t, "origin", None),
         "lead_level": getattr(t, "lead_level", None),
         "lead_score": getattr(t, "lead_score", None),
+        "lead_stage": getattr(t, "lead_stage", None),  # Estágio atual (string): "frio", "aquecimento", etc.
         "metadata": meta_dict,  # meta -> metadata (sempre dict)
         "external_user_phone": getattr(t, "external_user_phone", None),
         "created_at": _iso(getattr(t, "created_at", None)),
