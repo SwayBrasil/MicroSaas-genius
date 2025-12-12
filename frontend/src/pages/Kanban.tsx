@@ -176,10 +176,26 @@ export default function Kanban() {
     // Adiciona uma coluna para "Sem etapa" (contatos no funil mas sem stage_id)
     out["none"] = [];
 
-    // Agrupa contatos
+    // Agrupa contatos usando lead_stage (prioridade) ou stage_id como fallback
     filtered.forEach((t) => {
+      // Prioriza lead_stage do backend (sempre atualizado)
+      const leadStage = (t as any).lead_stage;
       const stageId = t.stage_id || (t.metadata as any)?.stage_id;
-      const key = stageId ? String(stageId) : "none";
+      
+      // Mapeia lead_stage para stage_id do funil
+      let mappedStageId: string | null = null;
+      
+      if (leadStage) {
+        // Busca a etapa que corresponde ao phase do lead_stage
+        const matchedStage = selectedFunnel.stages.find(s => s.phase === leadStage);
+        if (matchedStage) {
+          mappedStageId = String(matchedStage.id);
+        }
+      }
+      
+      // Se não encontrou por lead_stage, usa stage_id direto
+      const key = mappedStageId || (stageId ? String(stageId) : "none");
+      
       if (out[key] !== undefined) {
         out[key].push(t);
       }
