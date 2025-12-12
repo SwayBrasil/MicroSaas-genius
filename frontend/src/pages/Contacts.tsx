@@ -79,6 +79,8 @@ export default function Contacts() {
   const [filterAutomationStatus, setFilterAutomationStatus] = useState<string>("all");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "ultimo", dir: "desc" });
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [showFilters, setShowFilters] = useState(false);
+  const [openActionsMenu, setOpenActionsMenu] = useState<number | string | null>(null);
   
   // Modais
   const [showFlowModal, setShowFlowModal] = useState<{ threadId: number | string } | null>(null);
@@ -93,6 +95,20 @@ export default function Contacts() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  // Fecha o menu de ações ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-actions-menu]')) {
+        setOpenActionsMenu(null);
+      }
+    };
+    if (openActionsMenu !== null) {
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [openActionsMenu]);
 
   // Inicializa valores do modal Forçar Etapa quando abre
   useEffect(() => {
@@ -406,148 +422,208 @@ export default function Contacts() {
       gridTemplateRows: "auto 1fr",
       overflow: "hidden",
     }}>
-      {/* Filtros */}
+      {/* Barra de busca e filtros */}
       <div
         style={{
-          display: "flex",
-          gap: isMobile ? 6 : 8,
-          alignItems: "center",
-          padding: isMobile ? "8px 10px" : "10px 12px",
           borderBottom: "1px solid var(--border)",
-          background: "var(--panel)",
-          flexWrap: "wrap",
+          background: "var(--surface)",
+          boxShadow: "var(--shadow-sm)",
         }}
       >
-        <input
-          className="input"
-          placeholder={isMobile ? "Buscar..." : "Buscar (nome, número, mensagem)..."}
-          value={q}
-          onChange={e => setQ(e.target.value)}
-          style={{ 
-            maxWidth: isMobile ? "100%" : 280,
-            fontSize: isMobile ? 14 : 16,
-            flex: isMobile ? "1 1 100%" : "auto",
-            minWidth: isMobile ? "100%" : 200,
-          }}
-        />
-        <select 
-          className="select select--sm" 
-          value={origin} 
-          onChange={e => setOrigin(e.target.value)}
-          style={{ 
-            fontSize: isMobile ? 12 : 13,
-            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
-            minWidth: isMobile ? "calc(50% - 3px)" : 140,
+        {/* Linha superior: Busca + Botão Filtrar + Contador */}
+        <div
+          style={{
+            display: "flex",
+            gap: isMobile ? 8 : 12,
+            alignItems: "center",
+            padding: isMobile ? "12px 14px" : "14px 16px",
+            flexWrap: "wrap",
           }}
         >
-          <option value="">Todas as origens</option>
-          {[...new Set(origins)].map(o => (
-            <option key={o} value={o}>
-              {o.replace(/_/g, " ")}
-            </option>
-          ))}
-        </select>
-        <select 
-          className="select select--sm" 
-          value={level} 
-          onChange={e => setLevel(e.target.value as any)}
-          style={{ 
+          <input
+            className="input"
+            placeholder={isMobile ? "Buscar..." : "Buscar (nome, número, mensagem)..."}
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            style={{ 
+              flex: 1,
+              minWidth: isMobile ? "100%" : 200,
+              maxWidth: isMobile ? "100%" : 400,
+              fontSize: isMobile ? 14 : 15,
+            }}
+          />
+          <button
+            className={`btn ${showFilters ? "" : "soft"}`}
+            onClick={() => setShowFilters(!showFilters)}
+            style={{
+              fontSize: isMobile ? 13 : 14,
+              padding: isMobile ? "8px 12px" : "10px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flexShrink: 0,
+            }}
+          >
+            <span>{showFilters ? "Ocultar" : "Filtrar"}</span>
+            {(origin || level !== "todos" || filterFunnel !== "all" || filterStage !== "all" || filterProduct !== "all" || filterAutomationStatus !== "all") && (
+              <span className="badge badge-primary" style={{ fontSize: 10, padding: "2px 6px", marginLeft: 4 }}>
+                {[
+                  origin ? 1 : 0,
+                  level !== "todos" ? 1 : 0,
+                  filterFunnel !== "all" ? 1 : 0,
+                  filterStage !== "all" ? 1 : 0,
+                  filterProduct !== "all" ? 1 : 0,
+                  filterAutomationStatus !== "all" ? 1 : 0,
+                ].reduce((a, b) => a + b, 0)}
+              </span>
+            )}
+          </button>
+          <div style={{ 
+            color: "var(--text-muted)",
             fontSize: isMobile ? 12 : 13,
-            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
-            minWidth: isMobile ? "calc(50% - 3px)" : 130,
-          }}
-        >
-          <option value="todos">Todas as temperaturas</option>
-          <option value="frio">Frio</option>
-          <option value="morno">Morno</option>
-          <option value="quente">Quente</option>
-        </select>
-        <select 
-          className="select select--sm" 
-          value={filterFunnel} 
-          onChange={e => {
-            setFilterFunnel(e.target.value);
-            setFilterStage("all"); // Reset etapa quando muda funil
-          }}
-          style={{ 
-            fontSize: isMobile ? 12 : 13,
-            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
-            minWidth: isMobile ? "calc(50% - 3px)" : 160,
-          }}
-        >
-          <option value="all">Todos os funis</option>
-          {funnels.map(f => (
-            <option key={f.id} value={String(f.id)}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-        <select 
-          className="select select--sm" 
-          value={filterStage} 
-          onChange={e => setFilterStage(e.target.value)}
-          disabled={filterFunnel === "all"}
-          style={{ 
-            fontSize: isMobile ? 12 : 13,
-            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
-            minWidth: isMobile ? "calc(50% - 3px)" : 150,
-            opacity: filterFunnel === "all" ? 0.5 : 1,
-          }}
-        >
-          <option value="all">Todas as etapas</option>
-          {filterFunnel !== "all" && stages
-            .filter(s => String(s.funnelId) === filterFunnel)
-            .map(s => (
-              <option key={s.id} value={String(s.id)}>
-                {s.name}
-              </option>
-            ))}
-        </select>
-        <select 
-          className="select select--sm" 
-          value={filterProduct} 
-          onChange={e => setFilterProduct(e.target.value)}
-          style={{ 
-            fontSize: isMobile ? 12 : 13,
-            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
-            minWidth: isMobile ? "calc(50% - 3px)" : 140,
-          }}
-        >
-          <option value="all">Todos os produtos</option>
-          {products.map(p => {
-            const name = getProductName(p);
-            return (
-              <option key={p} value={p}>
-                {name || `Produto #${p}`}
-              </option>
-            );
-          })}
-        </select>
-        <select 
-          className="select select--sm" 
-          value={filterAutomationStatus} 
-          onChange={e => setFilterAutomationStatus(e.target.value)}
-          style={{ 
-            fontSize: isMobile ? 12 : 13,
-            flex: isMobile ? "1 1 calc(50% - 3px)" : "auto",
-            minWidth: isMobile ? "calc(50% - 3px)" : 140,
-          }}
-        >
-          <option value="all">Todos os status</option>
-          <option value="em_fluxo">Em fluxo</option>
-          <option value="pausado">Pausado</option>
-          <option value="concluido">Concluído</option>
-          <option value="nao_entrou">Não entrou</option>
-        </select>
-        <div style={{ 
-          marginLeft: isMobile ? 0 : "auto", 
-          color: "var(--muted)",
-          width: isMobile ? "100%" : "auto",
-          marginTop: isMobile ? 4 : 0,
-          fontSize: isMobile ? 11 : 12,
-        }} className="small">
-          {sorted.length} lead(s)
+            fontWeight: 500,
+            whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}>
+            {sorted.length} {sorted.length === 1 ? "contato" : "contatos"}
+          </div>
         </div>
+
+        {/* Painel de filtros (colapsável) */}
+        {showFilters && (
+          <div
+            style={{
+              padding: isMobile ? "12px 14px" : "14px 16px",
+              borderTop: "1px solid var(--border)",
+              background: "var(--panel)",
+              display: "flex",
+              gap: isMobile ? 8 : 10,
+              flexWrap: "wrap",
+              alignItems: "flex-start",
+            }}
+          >
+            <div style={{ 
+              width: "100%", 
+              fontSize: 12, 
+              fontWeight: 600, 
+              color: "var(--text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: 0.5,
+              marginBottom: 4,
+            }}>
+              Filtros
+            </div>
+            <select 
+              className="select select--sm" 
+              value={origin} 
+              onChange={e => setOrigin(e.target.value)}
+              style={{ 
+                fontSize: 13,
+                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 160px",
+                minWidth: isMobile ? "calc(50% - 4px)" : 160,
+              }}
+            >
+              <option value="">Todas as origens</option>
+              {[...new Set(origins)].map(o => (
+                <option key={o} value={o}>
+                  {o.replace(/_/g, " ")}
+                </option>
+              ))}
+            </select>
+            <select 
+              className="select select--sm" 
+              value={level} 
+              onChange={e => setLevel(e.target.value as any)}
+              style={{ 
+                fontSize: 13,
+                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 150px",
+                minWidth: isMobile ? "calc(50% - 4px)" : 150,
+              }}
+            >
+              <option value="todos">Todas as temperaturas</option>
+              <option value="frio">Frio</option>
+              <option value="morno">Morno</option>
+              <option value="quente">Quente</option>
+            </select>
+            <select 
+              className="select select--sm" 
+              value={filterFunnel} 
+              onChange={e => {
+                setFilterFunnel(e.target.value);
+                setFilterStage("all"); // Reset etapa quando muda funil
+              }}
+              style={{ 
+                fontSize: 13,
+                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 180px",
+                minWidth: isMobile ? "calc(50% - 4px)" : 180,
+              }}
+            >
+              <option value="all">Todos os funis</option>
+              {funnels.map(f => (
+                <option key={f.id} value={String(f.id)}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <select 
+              className="select select--sm" 
+              value={filterStage} 
+              onChange={e => setFilterStage(e.target.value)}
+              disabled={filterFunnel === "all"}
+              style={{ 
+                fontSize: 13,
+                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 170px",
+                minWidth: isMobile ? "calc(50% - 4px)" : 170,
+                opacity: filterFunnel === "all" ? 0.5 : 1,
+              }}
+            >
+              <option value="all">Todas as etapas</option>
+              {filterFunnel !== "all" && stages
+                .filter(s => String(s.funnelId) === filterFunnel)
+                .map(s => (
+                  <option key={s.id} value={String(s.id)}>
+                    {s.name}
+                  </option>
+                ))}
+            </select>
+            <select 
+              className="select select--sm" 
+              value={filterProduct} 
+              onChange={e => setFilterProduct(e.target.value)}
+              style={{ 
+                fontSize: 13,
+                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 160px",
+                minWidth: isMobile ? "calc(50% - 4px)" : 160,
+              }}
+            >
+              <option value="all">Todos os produtos</option>
+              {products.map(p => {
+                const name = getProductName(p);
+                return (
+                  <option key={p} value={p}>
+                    {name || `Produto #${p}`}
+                  </option>
+                );
+              })}
+            </select>
+            <select 
+              className="select select--sm" 
+              value={filterAutomationStatus} 
+              onChange={e => setFilterAutomationStatus(e.target.value)}
+              style={{ 
+                fontSize: 13,
+                flex: isMobile ? "1 1 calc(50% - 4px)" : "0 0 160px",
+                minWidth: isMobile ? "calc(50% - 4px)" : 160,
+              }}
+            >
+              <option value="all">Todos os status</option>
+              <option value="em_fluxo">Em fluxo</option>
+              <option value="pausado">Pausado</option>
+              <option value="concluido">Concluído</option>
+              <option value="nao_entrou">Não entrou</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Tabela (desktop) ou Cards (mobile) */}
@@ -762,31 +838,107 @@ export default function Contacts() {
                       );
                     })()}
                   </td>
-                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      <button
-                        className="btn soft"
-                        onClick={() => setShowFlowModal({ threadId: t.id })}
-                        style={{ fontSize: 11, padding: "4px 8px" }}
-                        title="Ver fluxo de automação"
+                  <td style={{ padding: "8px 12px", borderBottom: "1px solid var(--border)", position: "relative" }} data-actions-menu>
+                    <button
+                      className="btn soft"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenActionsMenu(openActionsMenu === t.id ? null : t.id);
+                      }}
+                      style={{ 
+                        fontSize: 12, 
+                        padding: "6px 12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <span>Ações</span>
+                      {openActionsMenu === t.id ? "▲" : "▼"}
+                    </button>
+                    {openActionsMenu === t.id && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          right: 0,
+                          marginTop: 4,
+                          background: "var(--surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          boxShadow: "var(--shadow-lg)",
+                          zIndex: 9999,
+                          minWidth: 180,
+                          padding: 4,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 2,
+                        }}
                       >
-                        Ver fluxo
-                      </button>
-                      <button
-                        className="btn soft"
-                        onClick={() => setShowForceStageModal({ threadId: t.id })}
-                        style={{ fontSize: 11, padding: "4px 8px" }}
-                        title="Forçar etapa"
-                      >
-                        Forçar etapa
-                      </button>
-                      <Link to={`/contacts/${t.id}`} className="btn soft" style={{ fontSize: 11, padding: "4px 8px" }}>
-                        CRM
-                      </Link>
-                      <a className="btn soft" href={`/#/chat?thread=${t.id}`} style={{ fontSize: 11, padding: "4px 8px" }}>
-                        Chat
-                      </a>
-                    </div>
+                          <button
+                            className="btn ghost"
+                            onClick={() => {
+                              setShowFlowModal({ threadId: t.id });
+                              setOpenActionsMenu(null);
+                            }}
+                            style={{
+                              fontSize: 13,
+                              padding: "8px 12px",
+                              justifyContent: "flex-start",
+                              textAlign: "left",
+                              width: "100%",
+                            }}
+                          >
+                            Ver fluxo
+                          </button>
+                          <button
+                            className="btn ghost"
+                            onClick={() => {
+                              setShowForceStageModal({ threadId: t.id });
+                              setOpenActionsMenu(null);
+                            }}
+                            style={{
+                              fontSize: 13,
+                              padding: "8px 12px",
+                              justifyContent: "flex-start",
+                              textAlign: "left",
+                              width: "100%",
+                            }}
+                          >
+                            📍 Forçar etapa
+                          </button>
+                          <Link
+                            to={`/contacts/${t.id}`}
+                            className="btn ghost"
+                            style={{
+                              fontSize: 13,
+                              padding: "8px 12px",
+                              justifyContent: "flex-start",
+                              textAlign: "left",
+                              width: "100%",
+                              textDecoration: "none",
+                            }}
+                            onClick={() => setOpenActionsMenu(null)}
+                          >
+                            👤 CRM
+                          </Link>
+                          <a
+                            className="btn ghost"
+                            href={`/#/chat?thread=${t.id}`}
+                            style={{
+                              fontSize: 13,
+                              padding: "8px 12px",
+                              justifyContent: "flex-start",
+                              textAlign: "left",
+                              width: "100%",
+                              textDecoration: "none",
+                            }}
+                            onClick={() => setOpenActionsMenu(null)}
+                          >
+                            💬 Chat
+                          </a>
+                        </div>
+                    )}
                   </td>
                 </tr>
               );
@@ -933,35 +1085,110 @@ export default function Contacts() {
                   {typeof effScore === "number" && <span>Score: {effScore}</span>}
                 </div>
 
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ position: "relative" }} data-actions-menu>
                   <button
                     className="btn soft"
-                    onClick={() => setShowFlowModal({ threadId: t.id })}
-                    style={{ fontSize: 11, padding: "6px 10px", flex: "1 1 calc(50% - 3px)" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenActionsMenu(openActionsMenu === t.id ? null : t.id);
+                    }}
+                    style={{ 
+                      fontSize: 13, 
+                      padding: "8px 16px",
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                    }}
                   >
-                    Ver fluxo
+                    <span>⚙️</span>
+                    <span>Ações</span>
+                    {openActionsMenu === t.id ? "▲" : "▼"}
                   </button>
-                  <button
-                    className="btn soft"
-                    onClick={() => setShowForceStageModal({ threadId: t.id })}
-                    style={{ fontSize: 11, padding: "6px 10px", flex: "1 1 calc(50% - 3px)" }}
-                  >
-                    Forçar etapa
-                  </button>
-                  <Link 
-                    to={`/contacts/${t.id}`} 
-                    className="btn soft" 
-                    style={{ fontSize: 11, padding: "6px 10px", flex: "1 1 calc(50% - 3px)" }}
-                  >
-                    CRM
-                  </Link>
-                  <a 
-                    className="btn soft" 
-                    href={`/#/chat?thread=${t.id}`} 
-                    style={{ fontSize: 11, padding: "6px 10px", flex: "1 1 calc(50% - 3px)" }}
-                  >
-                    Chat
-                  </a>
+                  {openActionsMenu === t.id && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: 0,
+                        right: 0,
+                        marginTop: 4,
+                        background: "var(--surface)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        boxShadow: "var(--shadow-lg)",
+                        zIndex: 9999,
+                        padding: 4,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 2,
+                      }}
+                    >
+                        <button
+                          className="btn ghost"
+                          onClick={() => {
+                            setShowFlowModal({ threadId: t.id });
+                            setOpenActionsMenu(null);
+                          }}
+                          style={{
+                            fontSize: 13,
+                            padding: "10px 12px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            width: "100%",
+                          }}
+                        >
+                          Ver fluxo
+                        </button>
+                        <button
+                          className="btn ghost"
+                          onClick={() => {
+                            setShowForceStageModal({ threadId: t.id });
+                            setOpenActionsMenu(null);
+                          }}
+                          style={{
+                            fontSize: 13,
+                            padding: "10px 12px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            width: "100%",
+                          }}
+                        >
+                          📍 Forçar etapa
+                        </button>
+                        <Link
+                          to={`/contacts/${t.id}`}
+                          className="btn ghost"
+                          style={{
+                            fontSize: 13,
+                            padding: "10px 12px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            width: "100%",
+                            textDecoration: "none",
+                          }}
+                          onClick={() => setOpenActionsMenu(null)}
+                        >
+                          👤 CRM
+                        </Link>
+                        <a
+                          className="btn ghost"
+                          href={`/#/chat?thread=${t.id}`}
+                          style={{
+                            fontSize: 13,
+                            padding: "10px 12px",
+                            justifyContent: "flex-start",
+                            textAlign: "left",
+                            width: "100%",
+                            textDecoration: "none",
+                          }}
+                          onClick={() => setOpenActionsMenu(null)}
+                        >
+                          💬 Chat
+                        </a>
+                      </div>
+                  )}
                 </div>
               </div>
             );

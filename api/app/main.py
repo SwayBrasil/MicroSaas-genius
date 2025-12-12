@@ -1095,6 +1095,7 @@ def _serialize_thread(t: Thread, db: Session = None) -> dict:
         "origin": getattr(t, "origin", None),
         "lead_level": getattr(t, "lead_level", None),
         "lead_score": getattr(t, "lead_score", None),
+        "lead_stage": getattr(t, "lead_stage", None),  # Etapa atual do funil (frio, aquecimento, aquecido, quente, etc.)
         "metadata": meta_dict,  # meta -> metadata (sempre dict)
         "external_user_phone": getattr(t, "external_user_phone", None),
         "created_at": _iso(getattr(t, "created_at", None)),
@@ -2209,8 +2210,9 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
         logger.info(f"[WEBHOOK-TWILIO] ✅ Automação processou gatilho {automation_trigger}, LLM vai responder agora")
         
         # Verifica se já enviou áudio 2 + imagens antes (evita repetição)
-        has_audio2 = any("[Áudio enviado: audio2" in msg.get("content", "") for msg in hist)
-        has_images = any("[Imagem enviada: img_resultado" in msg.get("content", "") for msg in hist)
+        # Aceita tanto "enviado" quanto "enviada" para compatibilidade
+        has_audio2 = any("[Áudio enviad" in msg.get("content", "") and "audio2" in msg.get("content", "") for msg in hist)
+        has_images = any("[Imagem enviad" in msg.get("content", "") and "img_resultado" in msg.get("content", "") for msg in hist)
         
         if has_audio2 and has_images:
             # Já enviou Fase 2 antes, não deve repetir
@@ -2255,6 +2257,31 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
             "role": "system",
             "content": "[CONTEXTO HISTÓRICO] O áudio 2 JÁ foi enviado antes nesta conversa. Você NÃO deve enviar o áudio 2 novamente."
         })
+    
+    # 🛒 VERIFICAÇÃO DE COMPRA CONFIRMADA - Adiciona informação sobre compras no contexto da IA
+    contact = db.query(Contact).filter(Contact.thread_id == t.id).first()
+    if contact:
+        # Busca compras aprovadas vinculadas ao contato
+        approved_sales = db.query(SaleEvent).filter(
+            SaleEvent.contact_id == contact.id,
+            SaleEvent.event == "sale.approved"
+        ).order_by(SaleEvent.created_at.desc()).all()
+        
+        if approved_sales:
+            # Pega a compra mais recente
+            latest_sale = approved_sales[0]
+            plan_type = latest_sale.plan_type or "mensal"
+            value_formatted = f"R${latest_sale.value / 100:.2f}" if latest_sale.value else "confirmado"
+            sale_date = latest_sale.created_at.strftime("%d/%m/%Y") if latest_sale.created_at else "recentemente"
+            
+            purchase_info = f"[STATUS DA COMPRA] ✅ COMPRA CONFIRMADA: O cliente JÁ realizou o pagamento e a compra foi confirmada pela plataforma (Eduzz). Plano: {plan_type}, Valor: {value_formatted}, Data: {sale_date}. A mensagem pós-compra com links de acesso já foi enviada automaticamente pelo sistema. Quando o cliente mencionar que já comprou ou perguntar sobre acesso, confirme que a compra foi confirmada e que os acessos já foram enviados."
+            
+            hist.append({
+                "role": "system",
+                "content": purchase_info
+            })
+            
+            logger.info(f"[WEBHOOK-TWILIO] ✅ Compra confirmada detectada para thread {t.id}: {plan_type}, {value_formatted}")
 
     await _broadcast(t.id, {"type": "assistant.typing.start"})
     try:

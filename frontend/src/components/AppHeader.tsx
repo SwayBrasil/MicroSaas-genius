@@ -83,7 +83,7 @@ export default function AppHeader() {
   return (
     <header
       style={{
-        minHeight: 50,
+        minHeight: 56,
         height: "auto",
         maxHeight: "100vh",
         width: "100%",
@@ -92,18 +92,19 @@ export default function AppHeader() {
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
-        padding: isMobile ? "8px 10px" : "0 12px",
+        padding: isMobile ? "10px 12px" : "0 20px",
         position: "sticky",
         top: 0,
         left: 0,
         right: 0,
         zIndex: 1000,
-        background: "var(--bg)",
-        backdropFilter: "saturate(120%) blur(4px)",
+        background: "var(--surface)",
+        backdropFilter: "saturate(180%) blur(10px)",
         boxSizing: "border-box",
         flexWrap: "nowrap",
         gap: isMobile ? 8 : 0,
         overflow: "visible",
+        boxShadow: "var(--shadow-sm)",
       }}
       aria-label="Barra superior"
     >

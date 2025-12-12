@@ -124,6 +124,15 @@ export async function postHumanReply(threadId: number | string, content: string)
   });
 }
 
+/** Dispara um áudio manualmente */
+export async function sendAudio(threadId: number | string, audioId: string) {
+  return http<any>(`/threads/${threadId}/send-audio`, {
+    method: "POST",
+    headers: { ...authHeaders() },
+    body: JSON.stringify({ audio_id: audioId }),
+  });
+}
+
 /* =========================
  * Stats (opcional)
  * =======================*/

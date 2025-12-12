@@ -70,10 +70,16 @@ async def process_llm_response(
     # Parse da resposta em ações ordenadas
     actions = parse_multimedia_reply(reply_str)
     
+    # Debug: mostra ações detectadas
+    print(f"[RESPONSE_PROCESSOR] 🔍 Ações detectadas: {len(actions)}")
+    for i, action in enumerate(actions):
+        print(f"[RESPONSE_PROCESSOR]   [{i+1}] {action.get('type')}: {action.get('audio_id') or action.get('image_id') or action.get('message', '')[:50]}")
+    
     # Valida ações
     is_valid, error_msg = validate_actions(actions)
     if not is_valid:
         print(f"[RESPONSE_PROCESSOR] ❌ Erro na validação: {error_msg}")
+        print(f"[RESPONSE_PROCESSOR] 📝 Resposta original (primeiros 500 chars): {reply_str[:500]}")
         # Fallback: envia como texto simples
         try:
             sid = await asyncio.to_thread(twilio.send_text, phone_number, reply_str, "BOT")
@@ -84,7 +90,7 @@ async def process_llm_response(
             print(f"[RESPONSE_PROCESSOR] ❌ Erro ao enviar fallback: {e}")
             return reply_str, metadata
     
-    print(f"[RESPONSE_PROCESSOR] ✅ {len(actions)} ação(ões) detectada(s)")
+    print(f"[RESPONSE_PROCESSOR] ✅ {len(actions)} ação(ões) detectada(s) e validadas")
     
     # Processa cada ação na ordem
     for i, action in enumerate(actions):

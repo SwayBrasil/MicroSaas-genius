@@ -7,9 +7,10 @@ import re
 from typing import List, Dict, Any, Optional
 
 # Regex patterns para detectar comandos
-AUDIO_RE = re.compile(r"^\[Áudio enviado:\s*(?P<audio_id>[^\]]+)\]\s*$", re.IGNORECASE)
-IMAGE_RE = re.compile(r"^\[Imagem enviada:\s*(?P<img_id>[^\]]+)\]\s*$", re.IGNORECASE)
-IMAGES_RE = re.compile(r"^\[Imagens enviadas:\s*(?P<img_ids>[^\]]+)\]\s*$", re.IGNORECASE)
+# Aceita tanto "enviado" quanto "enviada" para compatibilidade
+AUDIO_RE = re.compile(r"^\[Áudio enviad[oa]:\s*(?P<audio_id>[^\]]+)\]\s*$", re.IGNORECASE)
+IMAGE_RE = re.compile(r"^\[Imagem enviad[oa]:\s*(?P<img_id>[^\]]+)\]\s*$", re.IGNORECASE)
+IMAGES_RE = re.compile(r"^\[Imagens enviadas?:\s*(?P<img_ids>[^\]]+)\]\s*$", re.IGNORECASE)
 
 
 def parse_multimedia_reply(reply: str) -> List[Dict[str, Any]]:
@@ -71,11 +72,19 @@ def parse_multimedia_reply(reply: str) -> List[Dict[str, Any]]:
             continue
         
         # UMA IMAGEM
+        # Tenta match completo primeiro (linha inteira)
         m_img = IMAGE_RE.match(line)
+        # Se não encontrou, tenta buscar no meio da linha (caso tenha espaços extras ou texto antes/depois)
+        if not m_img:
+            m_img = IMAGE_RE.search(line)
         if m_img:
             flush_text()  # Envia texto pendente antes da imagem
             img_id = m_img.group("img_id").strip()
-            actions.append({"type": "image", "image_id": img_id})
+            # Remove espaços extras e caracteres inválidos
+            img_id = img_id.replace("\n", "").replace("\r", "").strip()
+            if img_id:
+                actions.append({"type": "image", "image_id": img_id})
+                print(f"[MULTIMEDIA_PARSER] ✅ Imagem detectada: {img_id}")
             continue
         
         # VÁRIAS IMAGENS (carrossel)

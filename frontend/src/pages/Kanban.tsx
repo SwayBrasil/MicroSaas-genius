@@ -71,6 +71,7 @@ export default function Kanban() {
           _phone: phone(t),
           funnel_id: (t as any).funnel_id || (t.metadata as any)?.funnel_id || null,
           stage_id: (t as any).stage_id || (t.metadata as any)?.stage_id || null,
+          lead_stage: (t as any).lead_stage || (t.metadata as any)?.lead_stage || null,
         }));
         setItems(base);
 
@@ -106,7 +107,7 @@ export default function Kanban() {
     })();
   }, []);
 
-  // Refresh leve a cada 30s
+  // Refresh leve a cada 10s para acompanhar mudanças de fluxo em tempo real
   useEffect(() => {
     const id = window.setInterval(async () => {
       const ts = await listThreads();
@@ -116,13 +117,17 @@ export default function Kanban() {
           const r = map.get(String(t.id));
           const funnelId = (t as any).funnel_id || ((t.metadata as any)?.funnel_id);
           const stageId = (t as any).stage_id || ((t.metadata as any)?.stage_id);
+          const leadStage = (t as any).lead_stage || ((t.metadata as any)?.lead_stage);
           
           if (r) {
             map.set(String(t.id), { 
               ...r, 
               origin: t.origin,
+              lead_level: t.lead_level,
+              lead_score: t.lead_score,
               funnel_id: funnelId || r.funnel_id,
               stage_id: stageId || r.stage_id,
+              lead_stage: leadStage || r.lead_stage,
             });
           } else {
             map.set(String(t.id), { 
@@ -130,12 +135,13 @@ export default function Kanban() {
               _phone: phone(t),
               funnel_id: funnelId,
               stage_id: stageId,
+              lead_stage: leadStage,
             });
           }
         }
         return Array.from(map.values());
       });
-    }, 30000);
+    }, 10000); // Atualiza a cada 10 segundos
     return () => clearInterval(id);
   }, []);
 
@@ -178,8 +184,8 @@ export default function Kanban() {
 
     // Agrupa contatos usando lead_stage (prioridade) ou stage_id como fallback
     filtered.forEach((t) => {
-      // Prioriza lead_stage do backend (sempre atualizado)
-      const leadStage = (t as any).lead_stage;
+      // Prioriza lead_stage do backend (sempre atualizado pela automação)
+      const leadStage = (t as any).lead_stage || (t.metadata as any)?.lead_stage;
       const stageId = t.stage_id || (t.metadata as any)?.stage_id;
       
       // Mapeia lead_stage para stage_id do funil
@@ -187,21 +193,35 @@ export default function Kanban() {
       
       if (leadStage) {
         // Busca a etapa que corresponde ao phase do lead_stage
+        // lead_stage pode ser: "frio", "aquecimento", "aquecido", "quente", "assinante", etc.
         const matchedStage = selectedFunnel.stages.find(s => s.phase === leadStage);
         if (matchedStage) {
           mappedStageId = String(matchedStage.id);
+        } else {
+          // Se não encontrou por phase exato, tenta mapear por nome similar
+          // Ex: "quente_recebeu_oferta" pode mapear para etapa com phase "quente"
+          const partialMatch = selectedFunnel.stages.find(s => 
+            leadStage.includes(s.phase) || s.phase.includes(leadStage)
+          );
+          if (partialMatch) {
+            mappedStageId = String(partialMatch.id);
+          }
         }
       }
       
       // Se não encontrou por lead_stage, usa stage_id direto
+      // Se stage_id não corresponde ao funil selecionado, vai para "none"
       const key = mappedStageId || (stageId ? String(stageId) : "none");
       
       if (out[key] !== undefined) {
         out[key].push(t);
+      } else {
+        // Se a etapa não existe no funil selecionado, coloca em "none"
+        out["none"].push(t);
       }
     });
 
-    // Ordena cada coluna por última mensagem
+    // Ordena cada coluna por última mensagem (mais recente primeiro)
     Object.keys(out).forEach(key => {
       out[key].sort((a, b) => {
         const ta = a._lastAt ? new Date(a._lastAt).getTime() : 0;
@@ -386,7 +406,7 @@ export default function Kanban() {
               }}
             >
               {/* Nome */}
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <strong
                   style={{
                     flex: 1,
@@ -401,19 +421,71 @@ export default function Kanban() {
                 >
                   {name(t)}
                 </strong>
+                {/* Tag de Suporte/Human Takeover */}
+                {t.human_takeover && (
+                  <div 
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      padding: "4px 10px",
+                      borderRadius: 12,
+                      fontSize: 10,
+                      fontWeight: 700,
+                      background: "#dc2626",
+                      color: "#ffffff",
+                      textTransform: "uppercase",
+                      letterSpacing: 0.5,
+                      boxShadow: "0 2px 8px rgba(220, 38, 38, 0.4)",
+                      animation: "pulse 2s ease-in-out infinite",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = "scale(1.05)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = "scale(1)";
+                    }}
+                  >
+                    Precisa Atenção
+                  </div>
+                )}
               </div>
 
               {/* Telefone */}
               {t._phone && (
                 <div className="small" style={{ color: "var(--muted)", fontSize: 11 }}>
-                  📱 {t._phone}
+                  {t._phone}
                 </div>
               )}
 
               {/* Origem */}
               {t.origin && (
                 <div className="small" style={{ color: "var(--muted)", fontSize: 11 }}>
-                  📍 {t.origin.replace(/_/g, " ")}
+                  {t.origin.replace(/_/g, " ")}
+                </div>
+              )}
+
+              {/* Lead Stage (atualizado pela automação) */}
+              {(t as any).lead_stage && (
+                <div style={{ 
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "2px 8px",
+                  borderRadius: 12,
+                  fontSize: 10,
+                  fontWeight: 600,
+                  background: (t as any).lead_stage === "quente" ? "#dc262615" : 
+                              (t as any).lead_stage === "aquecido" ? "#ef444415" : 
+                              (t as any).lead_stage === "aquecimento" ? "#f59e0b15" : 
+                              (t as any).lead_stage === "assinante" ? "#10b98115" : "#3b82f615",
+                  color: (t as any).lead_stage === "quente" ? "#dc2626" : 
+                         (t as any).lead_stage === "aquecido" ? "#ef4444" : 
+                         (t as any).lead_stage === "aquecimento" ? "#f59e0b" : 
+                         (t as any).lead_stage === "assinante" ? "#10b981" : "#3b82f6",
+                  width: "fit-content",
+                }}>
+                  {(t as any).lead_stage.charAt(0).toUpperCase() + (t as any).lead_stage.slice(1).replace(/_/g, " ")}
                 </div>
               )}
 
@@ -580,7 +652,7 @@ export default function Kanban() {
               </strong>
               {t._phone && (
                 <div className="small" style={{ color: "var(--muted)", fontSize: 11 }}>
-                  📱 {t._phone}
+                  {t._phone}
                 </div>
               )}
               <div style={{ flex: 1 }} />

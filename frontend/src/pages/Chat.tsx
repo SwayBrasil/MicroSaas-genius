@@ -7,6 +7,7 @@ import {
   deleteThread,
   setTakeover,
   postHumanReply,
+  sendAudio,
   type Thread,
   type Message,
 } from "../api";
@@ -15,7 +16,7 @@ import { computeLeadScoreFromMessages, levelFromScore } from "../utils/leadScore
 import type { UIMessage } from "../types/lead";
 import { INITIAL_FUNNELS } from "../data/funnels";
 import { INITIAL_AUDIOS } from "../data/audios";
-import type { AutomationAction } from "../types/funnel";
+import type { AutomationAction, FunnelStage } from "../types/funnel";
 
 /** Utils */
 function clsx(...xs: Array<string | false | undefined>) {
@@ -369,7 +370,27 @@ function Sidebar({
                       alignItems: "center", 
                       gap: 8, 
                       flexShrink: 0,
+                      flexWrap: "wrap",
                     }}>
+                      {/* Tag de Suporte/Human Takeover */}
+                      {t.human_takeover && (
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 3,
+                          padding: "2px 8px",
+                          borderRadius: 10,
+                          fontSize: 9,
+                          fontWeight: 700,
+                          background: "#dc2626",
+                          color: "#ffffff",
+                          textTransform: "uppercase",
+                          letterSpacing: 0.3,
+                          boxShadow: "0 2px 6px rgba(220, 38, 38, 0.4)",
+                        }}>
+                          🚨
+                        </div>
+                      )}
                       {lastMsgTime && (
                         <span
                           style={{
@@ -503,6 +524,101 @@ function Typing() {
   );
 }
 
+/** Componente de lista de áudios */
+function AudioList({ 
+  audios, 
+  threadId, 
+  onSendAudio, 
+  isMobile 
+}: { 
+  audios: typeof INITIAL_AUDIOS; 
+  threadId?: string; 
+  onSendAudio: (audioId: string, audioName: string) => Promise<void>;
+  isMobile?: boolean;
+}) {
+  const [sendingMap, setSendingMap] = useState<Record<number, boolean>>({});
+  
+  // Mapeia code_name para IDs conhecidos do backend
+  const audioIdMap: Record<string, string> = {
+    "life_funil_longo_01_boas_vindas_e_qualificacao_inicial": "audio1_boas_vindas",
+    "life_funil_longo_02_dor_generica": "audio2_dor_generica",
+    "life_funil_longo_03_explicacao_planos": "audio3_explicacao_planos",
+    "life_funil_longo_04_recuperacao_pos_nao_compra": "audio4_pos_compra",
+    "life_mini_funil_bf_01_oferta_black_friday": "audio_bf_oferta",
+    "life_mini_funil_bf_02_followup_sem_resposta": "audio_bf_follow1",
+    "life_recuperacao_50_02_audio_followup": "audio_carrinho_abandonado",
+    "life_recuperacao_50_03_audio_ultimo_chamado": "audio_bf_follow3",
+  };
+  
+  const handleSend = async (audio: typeof INITIAL_AUDIOS[0]) => {
+    if (!threadId || sendingMap[audio.id]) return;
+    
+    setSendingMap((prev) => ({ ...prev, [audio.id]: true }));
+    
+    try {
+      const audioId = audioIdMap[audio.code_name] || audio.code_name;
+      await onSendAudio(audioId, audio.display_name);
+    } finally {
+      setSendingMap((prev) => ({ ...prev, [audio.id]: false }));
+    }
+  };
+  
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      {audios.map((audio) => {
+        const sending = sendingMap[audio.id] || false;
+        
+        return (
+          <div
+            key={audio.id}
+            className="card"
+            style={{
+              padding: isMobile ? 10 : 12,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 10,
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>
+                {audio.display_name}
+              </div>
+              {audio.description && (
+                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.4 }}>
+                  {audio.description.length > 60 
+                    ? audio.description.substring(0, 60) + "..." 
+                    : audio.description}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => handleSend(audio)}
+              disabled={sending || !threadId}
+              className="btn"
+              style={{
+                padding: isMobile ? "6px 12px" : "8px 16px",
+                fontSize: isMobile ? 11 : 12,
+                fontWeight: 600,
+                borderRadius: 6,
+                background: sending ? "var(--muted)" : "var(--primary-color)",
+                color: "white",
+                border: "none",
+                cursor: sending || !threadId ? "not-allowed" : "pointer",
+                opacity: sending || !threadId ? 0.6 : 1,
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}
+            >
+              {sending ? "Enviando..." : "Enviar"}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Composer */
 function Composer({
   value,
@@ -571,7 +687,7 @@ function Composer({
           color: "#a78bfa",
           textAlign: "center",
         }}>
-          ⚙️ Este contato está em automação. O assistente só responde por gatilhos configurados.
+          Este contato está em automação. O assistente só responde por gatilhos configurados.
         </div>
       )}
 
@@ -587,7 +703,7 @@ function Composer({
           color: "#93c5fd",
           textAlign: "center",
         }}>
-          👤 Você está assumindo. A automação é pausada enquanto você responde.
+          Você está assumindo. A automação é pausada enquanto você responde.
         </div>
       )}
 
@@ -602,7 +718,7 @@ function Composer({
           color: "var(--muted)",
           textAlign: "center",
         }}>
-          ⚠️ Ative "👤 Assumir conversa" acima para enviar mensagens
+          Ative "Assumir conversa" acima para enviar mensagens
         </div>
       )}
       <div className="composer" style={{ 
@@ -1103,9 +1219,9 @@ export default function Chat() {
   return (
     <div
       style={{
-        height: "100vh",
+        height: "calc(100vh - 56px)",
         width: "100vw",
-        maxHeight: "100vh",
+        maxHeight: "calc(100vh - 56px)",
         maxWidth: "100vw",
         minHeight: 0,
         minWidth: 0,
@@ -1114,7 +1230,7 @@ export default function Chat() {
         color: "var(--text)",
         display: "flex",
         position: "fixed",
-        top: 0,
+        top: 56,
         left: 0,
         right: 0,
         bottom: 0,
@@ -1179,437 +1295,286 @@ export default function Chat() {
           }}
           aria-label="Janela do chat"
         >
-          {/* Header do Chat com Menu */}
+          {/* Header consolidado do Chat */}
           <div
             style={{
-              minHeight: isMobile ? 50 : 60,
-              height: "auto",
-              maxHeight: isMobile ? "60px" : "80px",
               borderBottom: "1px solid var(--border)",
-              background: "var(--panel)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: isMobile ? "8px 10px" : "10px 12px",
-              position: "relative",
+              background: "var(--surface)",
               flexShrink: 0,
-              gap: isMobile ? 6 : 8,
               boxSizing: "border-box",
-              overflow: "visible",
+              boxShadow: "var(--shadow-sm)",
+              position: "relative",
+              zIndex: 10,
             }}
           >
-            {/* Botão voltar/fechar conversa */}
-            <button
-              onClick={() => {
-                setActiveId(undefined);
-                if (isMobile) {
-                  setShowSidebar(true);
-                }
-              }}
+            {/* Linha superior: Nome do contato e controles principais */}
+            <div
               style={{
-                padding: isMobile ? "8px 12px" : "8px 12px",
-                marginRight: isMobile ? 6 : 8,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                cursor: "pointer",
                 display: "flex",
                 alignItems: "center",
-                justifyContent: "center",
-                fontSize: isMobile ? 20 : 18,
-                color: "var(--text)",
-                flexShrink: 0,
-                minWidth: isMobile ? 40 : 36,
-                height: isMobile ? 40 : 36,
-                lineHeight: 1,
-                fontWeight: 600,
-              }}
-              aria-label="Fechar chat e voltar para lista"
-              title="Fechar chat"
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "var(--panel)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--bg)";
+                justifyContent: "space-between",
+                padding: isMobile ? "12px 14px" : "14px 16px",
+                gap: isMobile ? 8 : 12,
+                flexWrap: "wrap",
               }}
             >
-              {isMobile ? "←" : "✕"}
-            </button>
-
-            {/* Info da conversa */}
-            <div style={{ 
-              flex: 1, 
-              display: "flex", 
-              alignItems: "center", 
-              gap: 8,
-              minWidth: 0,
-              overflow: "hidden",
-            }}>
-              <div style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
-                <div style={{ 
-                  fontWeight: 600, 
-                  fontSize: isMobile ? 14 : 16,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}>
-                  {(() => {
-                    const thread = threads.find(t => String(t.id) === activeId);
-                    if (!thread) return "Nova conversa";
-                    
-                    const name = thread.contact_name || 
-                                 thread.title || 
-                                 (thread.metadata as any)?.name ||
-                                 (thread.metadata as any)?.profile_name;
-                    
-                    if (name && name.trim()) return name.trim();
-                    
-                    const phone = (thread.metadata as any)?.wa_id || 
-                                 (thread.metadata as any)?.phone || 
-                                 thread.external_user_phone;
-                    if (phone) {
-                      const phoneStr = String(phone).replace(/[^\d]/g, "");
-                      return `Contato • ${phoneStr.slice(-4)}`;
-                    }
-                    
-                    return "Nova conversa";
-                  })()}
-                </div>
-                <div style={{ 
-                  fontSize: 11, 
-                  color: "var(--muted)", 
-                  marginTop: 2,
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: isMobile ? 4 : 6,
-                  alignItems: "center",
-                }}>
-                  {(() => {
-                    const thread = threads.find(t => String(t.id) === activeId);
-                    if (!thread) return null;
-                    
-                    const phone = (thread.metadata as any)?.wa_id || 
-                                 (thread.metadata as any)?.phone || 
-                                 thread.external_user_phone;
-                    const phoneFormatted = phone 
-                      ? String(phone).replace(/[^\d]/g, "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 ($2) $3-$4")
-                      : null;
-                    
-                    // Busca dados do funil/etapa
-                    const funnelId = (thread as any).funnel_id || (thread as any).metadata?.funnel_id;
-                    const stageId = (thread as any).stage_id || (thread as any).metadata?.stage_id;
-                    const source = (thread as any).source || (thread as any).metadata?.source;
-                    const tags = (thread as any).tags || (thread as any).metadata?.tags || [];
-                    const productId = (thread as any).product_id || (thread as any).metadata?.product_id;
-                    
-                    // Busca nomes do funil e etapa
-                    let stageName = null;
-                    let funnelName = null;
-                    if (funnelId && stageId) {
-                      const funnel = INITIAL_FUNNELS.find(f => String(f.id) === String(funnelId));
-                      if (funnel) {
-                        funnelName = funnel.name;
-                        const stage = funnel.stages.find(s => String(s.id) === String(stageId));
-                        if (stage) {
-                          stageName = stage.name;
-                        } else {
-                          stageName = `Etapa #${stageId}`;
-                        }
-                      }
-                    }
-                    
-                    const productName = productId ? `Produto #${productId}` : null;
-                    
-                    return (
-                      <>
-                        {phoneFormatted && (
-                          <span style={{ whiteSpace: "nowrap" }}>📱 {phoneFormatted}</span>
-                        )}
-                        {funnelName && (
-                          <span style={{ whiteSpace: "nowrap" }}>🎯 {funnelName}</span>
-                        )}
-                        {stageName && (
-                          <span style={{ whiteSpace: "nowrap" }}>📍 {stageName}</span>
-                        )}
-                        {productName && (
-                          <span style={{ whiteSpace: "nowrap" }}>📦 {productName}</span>
-                        )}
-                        {source && (
-                          <span style={{ whiteSpace: "nowrap" }}>🔗 {source}</span>
-                        )}
-                        {tags && tags.length > 0 && (
-                          <span style={{ whiteSpace: "nowrap" }}>🏷️ {tags.slice(0, 2).join(", ")}{tags.length > 2 ? "..." : ""}</span>
-                        )}
-                        {!phoneFormatted && !funnelName && !stageName && !productName && !source && tags.length === 0 && (
-                          <span>{takeoverActive ? "Modo humano ativo" : "Online"}</span>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            </div>
-
-            {/* Controles */}
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: 8,
-              flexShrink: 0,
-            }}>
-              {/* Lead tag */}
-              <LeadTag level={activeLead.level} score={activeLead.score} />
-            </div>
-          </div>
-
-          {/* Barra de controles (takeover, temperatura) */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: isMobile ? 6 : 8,
-              padding: isMobile ? "6px 10px" : "8px 12px",
-              borderBottom: "1px solid var(--border)",
-              background: "var(--panel)",
-              flexWrap: "wrap",
-              flexShrink: 0,
-              boxSizing: "border-box",
-              fontSize: isMobile ? 11 : 14,
-            }}
-          >
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: isMobile ? 6 : 8,
-              flexWrap: "wrap",
-            }}>
-              <label style={{ 
+              {/* Esquerda: Botão voltar + Info do contato */}
+              <div style={{ 
+                flex: 1, 
                 display: "flex", 
                 alignItems: "center", 
-                gap: isMobile ? 4 : 8, 
-                cursor: "pointer", 
-                fontSize: isMobile ? 12 : 14 
+                gap: isMobile ? 8 : 12,
+                minWidth: 0,
+                overflow: "hidden",
               }}>
-                <input
-                  type="checkbox"
-                  checked={takeoverActive}
-                  onChange={(e) => toggleTakeover(e.target.checked)}
-                  style={{ width: isMobile ? 14 : 16, height: isMobile ? 14 : 16 }}
-                />
-                <span>👤 {isMobile ? "Assumir" : "Assumir conversa"}</span>
-              </label>
+                {/* Botão voltar/fechar */}
+                <button
+                  onClick={() => {
+                    setActiveId(undefined);
+                    if (isMobile) {
+                      setShowSidebar(true);
+                    }
+                  }}
+                  className="btn ghost"
+                  style={{
+                    padding: "8px",
+                    minWidth: 36,
+                    height: 36,
+                    fontSize: 18,
+                    flexShrink: 0,
+                  }}
+                  aria-label="Fechar chat e voltar para lista"
+                  title="Fechar chat"
+                >
+                  {isMobile ? "←" : "✕"}
+                </button>
 
-              {takeoverActive && (
-                <span className="chip" style={{ 
-                  background: "#1e3a8a", 
-                  color: "white", 
-                  fontSize: isMobile ? 10 : 12,
-                  padding: isMobile ? "2px 6px" : "4px 8px",
-                }}>
-                  {isMobile ? "Humano" : "Modo humano ativo"}
-                </span>
-              )}
-
-              {/* Tag de automação */}
-              {(() => {
-                const thread = threads.find(t => String(t.id) === activeId);
-                const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
-                
-                if (hasAutomation) {
-                  return (
-                    <span className="chip" style={{ 
-                      background: "#7c3aed", 
-                      color: "white", 
-                      fontSize: isMobile ? 10 : 12,
-                      padding: isMobile ? "2px 6px" : "4px 8px",
-                    }}>
-                      ⚙️ {isMobile ? "Automação" : "Em fluxo de automação"}
+                {/* Info do contato */}
+                <div style={{ minWidth: 0, flex: 1, overflow: "hidden" }}>
+                  <div style={{ 
+                    fontWeight: 600, 
+                    fontSize: isMobile ? 15 : 16,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 4,
+                  }}>
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {(() => {
+                        const thread = threads.find(t => String(t.id) === activeId);
+                        if (!thread) return "Nova conversa";
+                        
+                        const name = thread.contact_name || 
+                                     thread.title || 
+                                     (thread.metadata as any)?.name ||
+                                     (thread.metadata as any)?.profile_name;
+                        
+                        if (name && name.trim()) return name.trim();
+                        
+                        const phone = (thread.metadata as any)?.wa_id || 
+                                     (thread.metadata as any)?.phone || 
+                                     thread.external_user_phone;
+                        if (phone) {
+                          const phoneStr = String(phone).replace(/[^\d]/g, "");
+                          return `Contato • ${phoneStr.slice(-4)}`;
+                        }
+                        
+                        return "Nova conversa";
+                      })()}
                     </span>
-                  );
-                } else {
-                  return (
-                    <span className="chip soft" style={{ 
-                      fontSize: isMobile ? 10 : 12,
-                      padding: isMobile ? "2px 6px" : "4px 8px",
+                    {/* Tag de Suporte/Human Takeover */}
+                    {(() => {
+                      const thread = threads.find(t => String(t.id) === activeId);
+                      if (thread?.human_takeover) {
+                        return (
+                          <div className="badge badge-danger" style={{ flexShrink: 0 }}>
+                            Precisa Atenção
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                  {!isMobile && (
+                    <div style={{ 
+                      fontSize: 12, 
+                      color: "var(--text-muted)", 
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 6,
+                      alignItems: "center",
                     }}>
-                      {isMobile ? "Manual" : "Modo manual"}
-                    </span>
-                  );
-                }
-              })()}
-
-              {/* Botão Ver fluxo */}
-              {(() => {
-                const thread = threads.find(t => String(t.id) === activeId);
-                const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
-                
-                if (hasAutomation) {
-                  return (
-                    <button
-                      className="btn soft"
-                      onClick={() => setShowAutomationModal(true)}
-                      style={{
-                        fontSize: isMobile ? 11 : 12,
-                        padding: isMobile ? "4px 8px" : "6px 10px",
-                      }}
-                    >
-                      {isMobile ? "📊" : "📊 Ver fluxo"}
-                    </button>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-
-            <div style={{ 
-              display: "flex", 
-              alignItems: "center", 
-              gap: isMobile ? 6 : 8,
-            }}>
-              <span style={{ 
-                fontSize: isMobile ? 11 : 12, 
-                color: "var(--muted)",
-                whiteSpace: "nowrap",
-              }}>
-                {isMobile ? "Temp:" : "Temperatura:"}
-              </span>
-              <select
-                className="select select--sm"
-                value={getOverrideLevel(activeId || "") || "auto"}
-                onChange={(e) => {
-                  const v = e.target.value as LeadLevel | "auto";
-                  handleOverride(v === "auto" ? null : (v as LeadLevel));
-                }}
-                style={{ 
-                  fontSize: isMobile ? 12 : 13, 
-                  padding: isMobile ? "4px 8px" : "6px 10px",
-                  minWidth: isMobile ? 80 : 100,
-                  height: isMobile ? 28 : "auto",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  background: "var(--bg)",
-                  color: "var(--text)",
-                }}
-              >
-                <option value="auto">Auto</option>
-                <option value="frio">Frio</option>
-                <option value="morno">Morno</option>
-                <option value="quente">Quente</option>
-              </select>
-              
-              {/* Botão fechar conversa */}
-              <button
-                onClick={() => {
-                  setActiveId(undefined);
-                  if (isMobile) {
-                    setShowSidebar(true);
-                  }
-                }}
-                style={{
-                  padding: isMobile ? "4px 8px" : "6px 10px",
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: isMobile ? 12 : 13,
-                  color: "var(--text)",
-                  flexShrink: 0,
-                  minWidth: isMobile ? 60 : 70,
-                  height: isMobile ? 28 : 32,
-                  lineHeight: 1,
-                  fontWeight: 500,
-                }}
-                aria-label="Fechar chat e voltar para lista"
-                title="Fechar chat"
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--panel)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg)";
-                }}
-              >
-                {isMobile ? "✕ Sair" : "✕ Fechar"}
-              </button>
-            </div>
-          </div>
-
-          {/* Barra com nome/número do contato */}
-          {(() => {
-            const thread = threads.find(t => String(t.id) === activeId);
-            
-            // Debug
-            console.log("[BARRA CONTATO] Thread encontrado:", thread ? {
-              id: thread.id,
-              contact_name: thread.contact_name,
-              title: thread.title,
-              metadata: thread.metadata,
-              external_user_phone: thread.external_user_phone,
-            } : "Thread não encontrado. activeId:", activeId);
-            
-            if (!thread) return null;
-            
-            const name = thread.contact_name || 
-                        thread.title || 
-                        (thread.metadata as any)?.name ||
-                        (thread.metadata as any)?.profile_name;
-            
-            const phone = (thread.metadata as any)?.wa_id || 
-                         (thread.metadata as any)?.phone || 
-                         thread.external_user_phone;
-            
-            const displayName = name && name.trim() 
-              ? name.trim() 
-              : phone 
-                ? `+${String(phone).replace(/[^\d]/g, "")}` 
-                : "Contato sem nome";
-            
-            console.log("[BARRA CONTATO] Nome:", name, "Phone:", phone, "DisplayName:", displayName);
-            
-            const phoneFormatted = phone 
-              ? String(phone).replace(/[^\d]/g, "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 ($2) $3-$4")
-              : null;
-            
-            return (
-              <div
-                style={{
-                  padding: isMobile ? "8px 10px" : "10px 12px",
-                  borderBottom: "1px solid var(--border)",
-                  background: "var(--bg)",
-                  flexShrink: 0,
-                  boxSizing: "border-box",
-                }}
-              >
-                <div style={{
-                  fontSize: isMobile ? 13 : 14,
-                  fontWeight: 600,
-                  color: "var(--text)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  flexWrap: "wrap",
-                }}>
-                  <span>👤</span>
-                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {displayName}
-                  </span>
-                  {phoneFormatted && (
-                    <span style={{
-                      fontSize: isMobile ? 11 : 12,
-                      color: "var(--muted)",
-                      fontWeight: 400,
-                      whiteSpace: "nowrap",
-                    }}>
-                      {phoneFormatted}
-                    </span>
+                      {(() => {
+                        const thread = threads.find(t => String(t.id) === activeId);
+                        if (!thread) return null;
+                        
+                        const phone = (thread.metadata as any)?.wa_id || 
+                                     (thread.metadata as any)?.phone || 
+                                     thread.external_user_phone;
+                        const phoneFormatted = phone 
+                          ? String(phone).replace(/[^\d]/g, "").replace(/^(\d{2})(\d{2})(\d{4,5})(\d{4})$/, "+$1 ($2) $3-$4")
+                          : null;
+                        
+                        const funnelId = (thread as any).funnel_id || (thread as any).metadata?.funnel_id;
+                        const stageId = (thread as any).stage_id || (thread as any).metadata?.stage_id;
+                        const source = (thread as any).source || (thread as any).metadata?.source;
+                        const tags = (thread as any).tags || (thread as any).metadata?.tags || [];
+                        
+                        let stageName = null;
+                        let funnelName = null;
+                        if (funnelId && stageId) {
+                          const funnel = INITIAL_FUNNELS.find(f => String(f.id) === String(funnelId));
+                          if (funnel) {
+                            funnelName = funnel.name;
+                            const stage = funnel.stages.find(s => String(s.id) === String(stageId));
+                            if (stage) {
+                              stageName = stage.name;
+                            }
+                          }
+                        }
+                        
+                        return (
+                          <>
+                            {phoneFormatted && <span style={{ whiteSpace: "nowrap" }}>{phoneFormatted}</span>}
+                            {funnelName && <span style={{ whiteSpace: "nowrap" }}>{funnelName}</span>}
+                            {stageName && <span style={{ whiteSpace: "nowrap" }}>{stageName}</span>}
+                            {source && <span style={{ whiteSpace: "nowrap" }}>{source}</span>}
+                            {tags && tags.length > 0 && (
+                              <span style={{ whiteSpace: "nowrap" }}>{tags.slice(0, 2).join(", ")}{tags.length > 2 ? "..." : ""}</span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
                   )}
                 </div>
               </div>
-            );
-          })()}
+
+              {/* Direita: LeadTag + Temperatura */}
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: isMobile ? 6 : 8,
+                flexShrink: 0,
+                flexWrap: "wrap",
+              }}>
+                <LeadTag level={activeLead.level} score={activeLead.score} />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ 
+                    fontSize: 12, 
+                    color: "var(--text-muted)",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {isMobile ? "Temp:" : "Temp.:"}
+                  </span>
+                  <select
+                    className="select"
+                    value={getOverrideLevel(activeId || "") || "auto"}
+                    onChange={(e) => {
+                      const v = e.target.value as LeadLevel | "auto";
+                      handleOverride(v === "auto" ? null : (v as LeadLevel));
+                    }}
+                    style={{ 
+                      fontSize: 12, 
+                      padding: "6px 10px",
+                      minWidth: isMobile ? 80 : 100,
+                    }}
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="frio">Frio</option>
+                    <option value="morno">Morno</option>
+                    <option value="quente">Quente</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Linha inferior: Controles de ação */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: isMobile ? 6 : 8,
+                padding: isMobile ? "6px 14px" : "8px 16px",
+                borderTop: "1px solid var(--border)",
+                background: "var(--panel)",
+                flexWrap: "wrap",
+                fontSize: 12,
+              }}
+            >
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: isMobile ? 6 : 8,
+                flexWrap: "wrap",
+              }}>
+                <label style={{ 
+                  display: "flex", 
+                  alignItems: "center", 
+                  gap: 6, 
+                  cursor: "pointer", 
+                  fontSize: 12,
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={takeoverActive}
+                    onChange={(e) => toggleTakeover(e.target.checked)}
+                    style={{ width: 14, height: 14, cursor: "pointer" }}
+                  />
+                  <span>Assumir conversa</span>
+                </label>
+
+                {takeoverActive && (
+                  <span className="chip badge-primary" style={{ fontSize: 10, padding: "2px 8px" }}>
+                    Modo humano ativo
+                  </span>
+                )}
+
+                {/* Tag de automação */}
+                {(() => {
+                  const thread = threads.find(t => String(t.id) === activeId);
+                  const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
+                  
+                  if (hasAutomation) {
+                    return (
+                      <span className="chip" style={{ 
+                        background: "var(--secondary-color)", 
+                        color: "white", 
+                        fontSize: 10,
+                        padding: "2px 8px",
+                      }}>
+                        Em fluxo de automação
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+
+                {/* Botão Ver fluxo */}
+                {(() => {
+                  const thread = threads.find(t => String(t.id) === activeId);
+                  const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
+                  
+                  if (hasAutomation) {
+                    return (
+                      <button
+                        className="btn soft btn-sm"
+                        onClick={() => setShowAutomationModal(true)}
+                        style={{ fontSize: 11, padding: "4px 10px" }}
+                      >
+                        Ver fluxo
+                      </button>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            </div>
+          </div>
 
           {/* Lista de mensagens */}
           <div
@@ -1764,7 +1729,6 @@ export default function Chat() {
           }}
         >
           <div>
-            <div style={{ fontSize: 64, marginBottom: 16 }}>💬</div>
             <h3 style={{ margin: "0 0 8px 0", color: "var(--text)" }}>Selecione uma conversa</h3>
             <p style={{ margin: 0, fontSize: 14 }}>
               Escolha uma conversa da lista ao lado para começar a conversar
@@ -1819,7 +1783,7 @@ export default function Chat() {
               }}
             >
               <h3 style={{ margin: 0, fontSize: modalIsMobile ? 16 : 18, fontWeight: 600 }}>
-                ⚙️ Fluxo de Automação
+                Fluxo de Automação
               </h3>
               <button
                 onClick={() => setShowAutomationModal(false)}
@@ -1850,28 +1814,35 @@ export default function Chat() {
                 const thread = threads.find(t => String(t.id) === activeId);
                 const hasAutomation = automationActive || (thread as any)?.automation_active || (thread as any)?.funnel_id;
                 
-                if (!hasAutomation) {
-                  return (
-                    <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}>
-                      <div style={{ fontSize: 48, marginBottom: 16 }}>⚙️</div>
-                      <p style={{ margin: 0, fontSize: 14 }}>
-                        Nenhuma automação ativa para este contato.
-                      </p>
-                    </div>
-                  );
-                }
-
                 // Busca informações do funil e etapa
                 const funnelId = (thread as any)?.funnel_id || (thread as any)?.metadata?.funnel_id;
                 const stageId = (thread as any)?.stage_id || (thread as any)?.metadata?.stage_id;
-                const leadStage = (thread as any)?.lead_stage; // "frio", "aquecimento", "aquecido", "quente", etc.
+                const leadStage = (thread as any)?.lead_stage || (thread as any)?.metadata?.lead_stage; // "frio", "aquecimento", "aquecido", "quente", etc.
+                const leadLevel = (thread as any)?.lead_level;
+                const leadScore = (thread as any)?.lead_score;
                 
-                const funnel = funnelId ? INITIAL_FUNNELS.find(f => f.id === funnelId) : null;
-                const stage = funnel && stageId ? funnel.stages.find(s => s.id === stageId) : null;
+                const funnel = funnelId ? INITIAL_FUNNELS.find(f => Number(f.id) === Number(funnelId)) : null;
+                
+                // Mapeia lead_stage para a etapa correta do funil
+                let stage: FunnelStage | null = null;
+                if (funnel && leadStage) {
+                  // Primeiro tenta encontrar por phase exato
+                  stage = funnel.stages.find(s => s.phase === leadStage) || null;
+                  // Se não encontrou, tenta mapear parcialmente
+                  if (!stage) {
+                    stage = funnel.stages.find(s => 
+                      leadStage.includes(s.phase) || s.phase.includes(leadStage)
+                    ) || null;
+                  }
+                }
+                // Se ainda não encontrou, usa stage_id
+                if (!stage && funnel && stageId) {
+                  stage = funnel.stages.find(s => Number(s.id) === Number(stageId)) || null;
+                }
                 
                 const automationName = funnel?.name || (thread as any)?.automation_name || (thread as any)?.funnel_name || "Automação ativa";
-                const stageName = stage?.name || (thread as any)?.stage_name || ((thread as any)?.stage_id ? `Etapa #${(thread as any).stage_id}` : "Etapa atual");
-                const stageLabel = leadStage ? `${leadStage.charAt(0).toUpperCase() + leadStage.slice(1)}` : null;
+                const stageName = stage?.name || (thread as any)?.stage_name || ((thread as any)?.stage_id ? `Etapa #${(thread as any).stage_id}` : leadStage ? `Etapa: ${leadStage}` : "Etapa atual");
+                const stageLabel = leadStage ? `${leadStage.charAt(0).toUpperCase() + leadStage.slice(1).replace(/_/g, " ")}` : null;
                 
                 // Busca nome do áudio se houver
                 const audioName = stage?.audio_id ? INITIAL_AUDIOS.find(a => a.id === stage.audio_id)?.display_name : null;
@@ -1879,61 +1850,127 @@ export default function Chat() {
                 return (
                   <div style={{ display: "grid", gap: 16 }}>
                     {/* Automação ativa */}
-                    <div className="card" style={{ padding: modalIsMobile ? 12 : 16 }}>
-                      <div style={{ 
-                        fontSize: 12, 
-                        color: "var(--muted)", 
-                        marginBottom: 8,
-                        fontWeight: 600,
-                        textTransform: "uppercase",
-                        letterSpacing: 0.5,
-                      }}>
-                        Automação Ativa
-                      </div>
-                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
-                        {automationName}
-                      </div>
-                      <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 8 }}>
-                        📍 {stageName}
-                      </div>
-                      {stageLabel && (
+                    {hasAutomation ? (
+                      <div className="card" style={{ padding: modalIsMobile ? 12 : 16 }}>
                         <div style={{ 
-                          padding: "4px 10px",
-                          background: leadStage === "quente" ? "#dc262615" : leadStage === "aquecido" ? "#ef444415" : leadStage === "aquecimento" ? "#f59e0b15" : "#3b82f615",
-                          color: leadStage === "quente" ? "#dc2626" : leadStage === "aquecido" ? "#ef4444" : leadStage === "aquecimento" ? "#f59e0b" : "#3b82f6",
-                          borderRadius: 6,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          display: "inline-block",
+                          fontSize: 12, 
+                          color: "var(--muted)", 
                           marginBottom: 8,
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
                         }}>
-                          {leadStage === "frio" && "❄️"}
-                          {leadStage === "aquecimento" && "🌤️"}
-                          {leadStage === "aquecido" && "🔥"}
-                          {leadStage === "quente" && "🔥🔥"}
-                          {" "}
-                          Estágio: {stageLabel}
+                          Fluxo de Automação
                         </div>
-                      )}
-                      {stage && (
-                        <div style={{ 
-                          padding: 8,
-                          background: "var(--bg)",
-                          borderRadius: 6,
-                          fontSize: 12,
-                          color: "var(--text)",
-                        }}>
-                          <div style={{ marginBottom: 4, fontWeight: 600 }}>Fase: {stage.phase}</div>
-                          {audioName && (
-                            <div style={{ color: "var(--muted)" }}>
-                              🎵 Áudio: {audioName}
+                        <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+                          {automationName}
+                        </div>
+                        
+                        {/* Lead Stage (atualizado pela automação em tempo real) */}
+                        {leadStage && (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ 
+                              fontSize: 11,
+                              color: "var(--muted)",
+                              marginBottom: 4,
+                              fontWeight: 600,
+                            }}>
+                              Estágio Atual (atualizado pela IA)
                             </div>
-                          )}
+                            <div style={{ 
+                              padding: "6px 12px",
+                              background: leadStage === "quente" ? "#dc262615" : 
+                                          leadStage === "aquecido" ? "#ef444415" : 
+                                          leadStage === "aquecimento" ? "#f59e0b15" : 
+                                          leadStage === "assinante" ? "#10b98115" : "#3b82f615",
+                              color: leadStage === "quente" ? "#dc2626" : 
+                                     leadStage === "aquecido" ? "#ef4444" : 
+                                     leadStage === "aquecimento" ? "#f59e0b" : 
+                                     leadStage === "assinante" ? "#10b981" : "#3b82f6",
+                              borderRadius: 8,
+                              fontSize: 14,
+                              fontWeight: 600,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                            }}>
+                              {stageLabel}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Etapa do Funil */}
+                        {stage && (
+                          <div style={{ 
+                            padding: 10,
+                            background: "var(--bg)",
+                            borderRadius: 8,
+                            fontSize: 12,
+                            color: "var(--text)",
+                            marginBottom: 8,
+                          }}>
+                            <div style={{ marginBottom: 6, fontWeight: 600, fontSize: 13 }}>
+                              Etapa: {stageName}
+                            </div>
+                            <div style={{ marginBottom: 4, color: "var(--muted)" }}>
+                              Ordem: {stage.order} • Fase: {stage.phase}
+                            </div>
+                            {audioName && (
+                              <div style={{ color: "var(--muted)", marginTop: 4 }}>
+                                Áudio configurado: {audioName}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Lead Level e Score */}
+                        {(leadLevel || leadScore !== undefined) && (
+                          <div style={{ 
+                            padding: 10,
+                            background: "var(--bg)",
+                            borderRadius: 8,
+                            fontSize: 12,
+                            display: "flex",
+                            gap: 12,
+                            flexWrap: "wrap",
+                          }}>
+                            {leadLevel && (
+                              <div>
+                                <span style={{ color: "var(--muted)", fontSize: 11 }}>Nível:</span>{" "}
+                                <strong style={{ color: "var(--text)" }}>{leadLevel}</strong>
+                              </div>
+                            )}
+                            {leadScore !== undefined && leadScore !== null && (
+                              <div>
+                                <span style={{ color: "var(--muted)", fontSize: 11 }}>Score:</span>{" "}
+                                <strong style={{ color: "var(--text)" }}>{leadScore}</strong>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Aviso se não há lead_stage */}
+                        {!leadStage && (
+                          <div style={{ 
+                            padding: 8,
+                            background: "#fef3c7",
+                            borderRadius: 6,
+                            fontSize: 11,
+                            color: "#92400e",
+                          }}>
+                            ⚠️ Este contato ainda não tem um estágio definido. O estágio será atualizado automaticamente quando a automação detectar gatilhos.
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="card" style={{ padding: modalIsMobile ? 12 : 16, background: "#f3f4f6" }}>
+                        <div style={{ fontSize: 13, color: "var(--muted)", textAlign: "center" }}>
+                          ⚠️ Nenhuma automação ativa para este contato
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
-                    {/* Últimas ações */}
+                    {/* Enviar Áudios */}
                     <div>
                       <div style={{ 
                         fontSize: 12, 
@@ -1943,98 +1980,37 @@ export default function Chat() {
                         textTransform: "uppercase",
                         letterSpacing: 0.5,
                       }}>
-                        Últimas Ações
+                        Enviar Áudios
                       </div>
-                      {(() => {
-                        // Busca últimas mensagens do assistente (ações da automação)
-                        const recentActions = messages
-                          .filter(m => m.role === "assistant")
-                          .slice(-5) // Últimas 5 ações
-                          .reverse(); // Mais recente primeiro
-                        
-                        return recentActions.length > 0 ? (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          {recentActions.map((msg) => {
-                            // Detecta tipo de ação baseado no conteúdo
-                            const content = msg.content;
-                            let actionIcon = "💬";
-                            let actionType = "Mensagem";
+                      <AudioList 
+                        audios={INITIAL_AUDIOS}
+                        threadId={activeId}
+                        onSendAudio={async (audioId: string, audioName: string) => {
+                          if (!activeId) return;
+                          
+                          try {
+                            await sendAudio(Number(activeId), audioId);
                             
-                            if (content.includes("[Áudio enviado:")) {
-                              actionIcon = "🎵";
-                              actionType = "Áudio enviado";
-                            } else if (content.includes("[Imagem enviada:")) {
-                              actionIcon = "🖼️";
-                              actionType = "Imagem enviada";
-                            } else if (content.includes("https://") || content.includes("http://")) {
-                              actionIcon = "🔗";
-                              actionType = "Link enviado";
-                            } else if (content.includes("[Automação executada:")) {
-                              actionIcon = "⚙️";
-                              actionType = "Automação";
-                            }
+                            // Atualiza mensagens para mostrar o áudio enviado
+                            const newMsg: UIMessage = {
+                              id: "temp-audio-" + Date.now(),
+                              role: "assistant",
+                              content: `[Áudio enviado manualmente: ${audioName}]`,
+                              created_at: new Date().toISOString(),
+                              is_human: true,
+                            };
+                            setMessages((prev) => [...prev, newMsg]);
                             
-                            // Extrai descrição curta
-                            let shortDesc = content;
-                            if (content.includes("[Áudio enviado:")) {
-                              const match = content.match(/\[Áudio enviado: ([^\]]+)\]/);
-                              shortDesc = match ? match[1] : "Áudio";
-                            } else if (content.includes("[Imagem enviada:")) {
-                              const match = content.match(/\[Imagem enviada: ([^\]]+)\]/);
-                              shortDesc = match ? match[1] : "Imagem";
-                            } else if (content.includes("[Automação executada:")) {
-                              const match = content.match(/\[Automação executada: ([^\]]+)\]/);
-                              shortDesc = match ? match[1] : "Automação";
-                            } else {
-                              // Limita texto longo
-                              shortDesc = content.length > 50 ? content.substring(0, 50) + "..." : content;
-                            }
-                            
-                            return (
-                              <div
-                                key={msg.id}
-                                className="card"
-                                style={{
-                                  padding: modalIsMobile ? 10 : 12,
-                                  display: "flex",
-                                  alignItems: "flex-start",
-                                  gap: 10,
-                                }}
-                              >
-                                <div style={{ 
-                                  width: 6, 
-                                  height: 6, 
-                                  borderRadius: 999, 
-                                  background: "#10b981",
-                                  marginTop: 6,
-                                  flexShrink: 0,
-                                }} />
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                                    <span>{actionIcon}</span>
-                                    <span>{shortDesc}</span>
-                                  </div>
-                                  <div style={{ fontSize: 11, color: "var(--muted)" }}>
-                                    {msg.created_at ? new Date(msg.created_at).toLocaleString("pt-BR", {
-                                      day: "2-digit",
-                                      month: "2-digit",
-                                      hour: "2-digit",
-                                      minute: "2-digit",
-                                    }) : "Agora"}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <div className="card" style={{ padding: 16, textAlign: "center", color: "var(--muted)" }}>
-                          <div style={{ fontSize: 13 }}>
-                            Nenhuma ação registrada ainda.
-                          </div>
-                        </div>
-                      );
-                      })()}
+                            // Scroll para baixo
+                            setTimeout(() => {
+                              listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+                            }, 100);
+                          } catch (error: any) {
+                            setErrorMsg(error?.message || "Erro ao enviar áudio");
+                          }
+                        }}
+                        isMobile={modalIsMobile}
+                      />
                     </div>
                   </div>
                 );

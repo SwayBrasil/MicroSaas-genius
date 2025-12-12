@@ -15,9 +15,11 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  LineChart,
+  Line,
 } from "recharts";
 import { useAuth } from "../auth";
-import { getProfile, getUsage, getStats } from "../api";
+import { getProfile, getUsage, getStats, getAnalyticsSummary, getSalesByDay } from "../api";
 
 /** =========================
  * Tipos
@@ -30,12 +32,14 @@ type ProfileData = {
   created_at?: string | null;
   last_activity_at?: string | null;
 };
+
 type UsageData = {
   threads_total: number;
   messages_total: number;
   user_sent: number;
   assistant_sent: number;
 };
+
 type MessagesByDay = { date: string; user: number; assistant: number };
 
 type TopContact = {
@@ -46,7 +50,6 @@ type TopContact = {
 };
 
 type StatsResponse = {
-  // básicos (já existiam)
   threads?: number;
   total_messages?: number;
   user_messages?: number;
@@ -54,26 +57,42 @@ type StatsResponse = {
   last_activity?: string | null;
   messages_by_day?: MessagesByDay[];
   avg_assistant_response_ms?: number | null;
-
-  // novos (opcionais; render condicional)
-  first_response_time_ms_avg?: number | null; // FRT
-  resolution_time_ms_avg?: number | null;     // TMR
+  first_response_time_ms_avg?: number | null;
+  resolution_time_ms_avg?: number | null;
   assistant_latency_p50?: number | null;
   assistant_latency_p95?: number | null;
-  takeover_rate?: number | null;              // 0..1 (fração)
+  takeover_rate?: number | null;
   lead_levels?: { frio?: number; morno?: number; quente?: number } | null;
-  active_days_30d?: number | null;            // 0..30
-  messages_by_hour?: number[] | null;         // 24 posições
-  messages_heatmap?: number[][] | null;       // 7x24 (0=Dom, 6=Sáb) opcional
+  active_days_30d?: number | null;
+  messages_by_hour?: number[] | null;
+  messages_heatmap?: number[][] | null;
   top_contacts?: TopContact[] | null;
   wa_templates_month?: number | null;
   wa_sessions_month?: number | null;
   tokens_month?: { prompt?: number; completion?: number } | null;
-
-  // onboarding
   onboarding_total_steps?: number | null;
   onboarding_current_step?: number | null;
   is_onboarded?: boolean | null;
+  threads_growth?: Array<{ date: string; count: number }>;
+  origin_distribution?: Array<{ origin: string; count: number }>;
+  response_rate?: number;
+};
+
+type AnalyticsSummary = {
+  total_threads: number;
+  total_contacts: number;
+  total_sales: number;
+  total_revenue: number; // em centavos
+  sales_with_conversation: number;
+  sales_without_conversation: number;
+  total_subscriptions: number;
+  active_subscriptions: number;
+};
+
+type SalesByDay = {
+  date: string;
+  qtd_vendas: number;
+  valor_total: number; // em centavos
 };
 
 /** =========================
@@ -82,8 +101,19 @@ type StatsResponse = {
 function formatDate(dt?: string | number | Date | null) {
   if (!dt) return "—";
   const d = new Date(dt);
-  return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric" });
 }
+
+function formatDateTime(dt?: string | number | Date | null) {
+  if (!dt) return "—";
+  const d = new Date(dt);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function formatCurrency(cents: number) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(cents / 100);
+}
+
 function initials(name?: string, email?: string) {
   if (name && name.trim()) {
     const parts = name.trim().split(/\s+/).slice(0, 2);
@@ -92,35 +122,107 @@ function initials(name?: string, email?: string) {
   const user = email?.split("@")[0] || "U";
   return (user[0] || "U").toUpperCase();
 }
+
 const clamp = (x: number, min: number, max: number) => Math.max(min, Math.min(max, x));
+
+function formatTime(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 /** =========================
  * Componentes Visuais
  * ========================= */
-function ProgressBar({ value, max = 100 }: { value: number; max?: number }) {
+function ProgressBar({ value, max = 100, color = "var(--primary-color)" }: { value: number; max?: number; color?: string }) {
   const pct = max > 0 ? clamp((value / max) * 100, 0, 100) : 0;
   return (
-    <div style={{ width: "100%", height: 10, background: "var(--soft)", borderRadius: 999, overflow: "hidden" }}>
-      <div style={{ width: `${pct}%`, height: "100%", background: "var(--primary)" }} />
+    <div style={{ width: "100%", height: 8, background: "var(--panel)", borderRadius: 999, overflow: "hidden" }}>
+      <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 0.3s ease" }} />
     </div>
   );
 }
 
-function MiniBar({ a, b, labelA, labelB }: { a: number; b: number; labelA: string; labelB: string }) {
+function StatCard({ 
+  title, 
+  value, 
+  valueLabel, 
+  subtitle,
+  trend,
+  color = "var(--primary-color)",
+}: { 
+  title: string; 
+  value?: number; 
+  valueLabel?: string;
+  subtitle?: string;
+  trend?: { value: number; label: string };
+  color?: string;
+}) {
+  return (
+    <div className="card" style={{ padding: 20, position: "relative", overflow: "hidden" }}>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {title}
+      </div>
+      <div style={{ fontSize: 32, fontWeight: 700, color, marginBottom: subtitle ? 4 : 0 }}>
+        {typeof valueLabel === "string" ? valueLabel : value ?? 0}
+      </div>
+      {subtitle && (
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+          {subtitle}
+        </div>
+      )}
+      {trend && (
+        <div style={{ 
+          display: "flex", 
+          alignItems: "center", 
+          gap: 4, 
+          marginTop: 8,
+          fontSize: 12,
+          color: trend.value >= 0 ? "var(--success)" : "var(--danger)",
+        }}>
+          <span>{trend.value >= 0 ? "↑" : "↓"}</span>
+          <span>{trend.label}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MiniBar({ a, b, labelA, labelB, colorA = "#6366f1", colorB = "#10b981" }: { 
+  a: number; 
+  b: number; 
+  labelA: string; 
+  labelB: string;
+  colorA?: string;
+  colorB?: string;
+}) {
   const tot = Math.max(0, a + b);
   const pa = tot ? (a / tot) * 100 : 0;
   const pb = tot ? (b / tot) * 100 : 0;
   return (
     <div style={{ display: "grid", gap: 8 }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <span className="small">{labelA}: <strong>{a}</strong></span>
-        <span className="small">{labelB}: <strong>{b}</strong></span>
-        <span className="small" style={{ marginLeft: "auto", opacity: 0.8 }}>Total: {tot}</span>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 12, height: 12, borderRadius: 3, background: colorA }} />
+          <span className="small" style={{ fontWeight: 500 }}>{labelA}: <strong>{a}</strong></span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ width: 12, height: 12, borderRadius: 3, background: colorB }} />
+          <span className="small" style={{ fontWeight: 500 }}>{labelB}: <strong>{b}</strong></span>
+        </div>
+        {tot > 0 && (
+          <span className="small" style={{ marginLeft: "auto", opacity: 0.7 }}>Total: {tot}</span>
+        )}
       </div>
-      <div style={{ height: 12, borderRadius: 999, overflow: "hidden", display: "flex" }}>
-        <div style={{ width: `${pa}%`, background: "#6366f1" }} />
-        <div style={{ width: `${pb}%`, background: "#10b981" }} />
-      </div>
+      {tot > 0 && (
+        <div style={{ height: 10, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--panel)" }}>
+          <div style={{ width: `${pa}%`, background: colorA, transition: "width 0.3s ease" }} />
+          <div style={{ width: `${pb}%`, background: colorB, transition: "width 0.3s ease" }} />
+        </div>
+      )}
     </div>
   );
 }
@@ -129,83 +231,28 @@ function LeadDistribution({ frio = 0, morno = 0, quente = 0 }: { frio?: number; 
   const tot = Math.max(0, frio + morno + quente);
   const pct = (x: number) => (tot ? Math.round((x / tot) * 100) : 0);
   return (
-    <div style={{ display: "grid", gap: 10 }}>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <span className="chip" style={{ background: "#0f172a", color: "#93c5fd", border: "1px solid #1d4ed8" }}>
-          Frio: <strong style={{ marginLeft: 6 }}>{frio}</strong> ({pct(frio)}%)
-        </span>
-        <span className="chip" style={{ background: "#1f2937", color: "#fde68a", border: "1px solid #f59e0b" }}>
-          Morno: <strong style={{ marginLeft: 6 }}>{morno}</strong> ({pct(morno)}%)
-        </span>
-        <span className="chip" style={{ background: "#2d0f12", color: "#fecaca", border: "1px solid #dc2626" }}>
-          Quente: <strong style={{ marginLeft: 6 }}>{quente}</strong> ({pct(quente)}%)
-        </span>
+    <div style={{ display: "grid", gap: 12 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div className="chip" style={{ background: "#0f172a", color: "#93c5fd", border: "1px solid #1d4ed8", fontSize: 12, padding: "6px 12px" }}>
+          Frio: <strong style={{ marginLeft: 4 }}>{frio}</strong> ({pct(frio)}%)
+        </div>
+        <div className="chip" style={{ background: "#1f2937", color: "#fde68a", border: "1px solid #f59e0b", fontSize: 12, padding: "6px 12px" }}>
+          Morno: <strong style={{ marginLeft: 4 }}>{morno}</strong> ({pct(morno)}%)
+        </div>
+        <div className="chip" style={{ background: "#2d0f12", color: "#fecaca", border: "1px solid #dc2626", fontSize: 12, padding: "6px 12px" }}>
+          Quente: <strong style={{ marginLeft: 4 }}>{quente}</strong> ({pct(quente)}%)
+        </div>
       </div>
-      <div style={{ height: 12, borderRadius: 999, overflow: "hidden", display: "flex" }}>
-        <div style={{ width: `${pct(frio)}%`, background: "#1d4ed8" }} />
-        <div style={{ width: `${pct(morno)}%`, background: "#f59e0b" }} />
-        <div style={{ width: `${pct(quente)}%`, background: "#dc2626" }} />
-      </div>
+      {tot > 0 && (
+        <div style={{ height: 10, borderRadius: 999, overflow: "hidden", display: "flex", background: "var(--panel)" }}>
+          <div style={{ width: `${pct(frio)}%`, background: "#1d4ed8" }} />
+          <div style={{ width: `${pct(morno)}%`, background: "#f59e0b" }} />
+          <div style={{ width: `${pct(quente)}%`, background: "#dc2626" }} />
+        </div>
+      )}
     </div>
   );
 }
-
-function MiniHeatmap24x7({
-  heatmap, // 7x24 [dia][hora]
-  width = 360,
-  height = 140,
-  dayLabels = ["D", "S", "T", "Q", "Q", "S", "S"],
-}: {
-  heatmap: number[][];
-  width?: number;
-  height?: number;
-  dayLabels?: string[];
-}) {
-  const rows = heatmap.length;
-  const cols = heatmap[0]?.length || 0;
-  const cellW = width / Math.max(1, cols);
-  const cellH = height / Math.max(1, rows);
-  const flat = heatmap.flat();
-  const max = Math.max(1, ...flat);
-  return (
-    <div style={{ display: "grid", gap: 6 }}>
-      <div style={{ display: "grid", gridTemplateColumns: `auto ${width}px`, alignItems: "center", gap: 8 }}>
-        <div />
-        <div className="small" style={{ display: "flex", justifyContent: "space-between", opacity: 0.8 }}>
-          {Array.from({ length: cols }, (_, i) => <span key={i} style={{ width: cellW, textAlign: "center" }}>{i}</span>)}
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: `auto ${width}px`, gap: 8 }}>
-        <div style={{ display: "grid", gap: 4 }}>
-          {Array.from({ length: rows }, (_, r) => (
-            <div key={r} className="small" style={{ opacity: 0.8 }}>{dayLabels[r] ?? r}</div>
-          ))}
-        </div>
-        <svg width={width} height={height}>
-          {heatmap.map((row, r) =>
-            row.map((v, c) => {
-              const intensity = v / max; // 0..1
-              const bg = `rgba(99,102,241,${0.08 + 0.85 * intensity})`;
-              return (
-                <rect
-                  key={`${r}-${c}`}
-                  x={c * cellW}
-                  y={r * cellH}
-                  width={cellW - 1}
-                  height={cellH - 1}
-                  fill={bg}
-                  stroke="transparent"
-                />
-              );
-            })
-          )}
-        </svg>
-      </div>
-    </div>
-  );
-}
-
 
 /** =========================
  * Página Profile
@@ -217,8 +264,18 @@ export default function Profile() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [stats, setStatsState] = useState<StatsResponse | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [salesByDay, setSalesByDay] = useState<SalesByDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [humanSecondsPerMsg, setHumanSecondsPerMsg] = useState<number>(45);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const fallback: ProfileData = useMemo(
     () => ({
@@ -237,10 +294,18 @@ export default function Profile() {
       try {
         setLoading(true);
         setErr(null);
-        const [pRes, uRes, sRes] = await Promise.allSettled([getProfile?.(), getUsage?.(), getStats?.()]);
+        const [pRes, uRes, sRes, aRes, sbdRes] = await Promise.allSettled([
+          getProfile?.(),
+          getUsage?.(),
+          getStats?.(),
+          getAnalyticsSummary ? getAnalyticsSummary() : Promise.resolve(null),
+          getSalesByDay ? getSalesByDay(30) : Promise.resolve([]),
+        ]);
         if (pRes.status === "fulfilled" && pRes.value) setProfile(pRes.value);
         if (uRes.status === "fulfilled" && uRes.value) setUsage(uRes.value);
         if (sRes.status === "fulfilled" && sRes.value) setStatsState(sRes.value as StatsResponse);
+        if (aRes.status === "fulfilled" && aRes.value) setAnalytics(aRes.value);
+        if (sbdRes.status === "fulfilled" && sbdRes.value) setSalesByDay(Array.isArray(sbdRes.value) ? sbdRes.value : []);
       } catch (e: any) {
         setErr(e?.message || "Falha ao carregar sua conta.");
       } finally {
@@ -255,6 +320,8 @@ export default function Profile() {
   const totalUser = stats?.user_messages ?? usage?.user_sent ?? 0;
   const totalAssistant = stats?.assistant_messages ?? usage?.assistant_sent ?? 0;
   const totalMsgs = stats?.total_messages ?? usage?.messages_total ?? (totalUser + totalAssistant);
+  const msgsPerThread = (totalMsgs && stats?.threads) ? (totalMsgs / (stats.threads || 1)) : 0;
+  const takeoverPct = typeof stats?.takeover_rate === "number" ? Math.round(stats.takeover_rate * 100) : null;
 
   // Dados para gráficos
   const pieData = [
@@ -287,25 +354,13 @@ export default function Profile() {
 
   // Distribuição de leads
   const leadDistribution = useMemo(() => {
-    const counts = { quente: 0, morno: 0, frio: 0, desconhecido: 0 };
-    if (stats?.lead_levels) {
-      counts.quente = stats.lead_levels.quente || 0;
-      counts.morno = stats.lead_levels.morno || 0;
-      counts.frio = stats.lead_levels.frio || 0;
-      counts.desconhecido = stats.lead_levels.desconhecido || 0;
-    }
-    const totalKnown = counts.quente + counts.morno + counts.frio;
-    const totalThreads = stats?.threads || 0;
-    if (counts.desconhecido === 0 && totalThreads > totalKnown) {
-      counts.desconhecido = totalThreads - totalKnown;
-    }
+    const counts = stats?.lead_levels || { quente: 0, morno: 0, frio: 0 };
     return [
-      { name: "Quente", value: counts.quente, color: "#dc2626" },
-      { name: "Morno", value: counts.morno, color: "#f59e0b" },
-      { name: "Frio", value: counts.frio, color: "#1d4ed8" },
-      { name: "Sem classificação", value: counts.desconhecido, color: "#6b7280" },
+      { name: "Quente", value: counts.quente || 0, color: "#dc2626" },
+      { name: "Morno", value: counts.morno || 0, color: "#f59e0b" },
+      { name: "Frio", value: counts.frio || 0, color: "#1d4ed8" },
     ].filter((item) => item.value > 0);
-  }, [stats?.lead_levels, stats?.threads]);
+  }, [stats?.lead_levels]);
 
   // Crescimento de conversas
   const growthData = useMemo(() => {
@@ -324,158 +379,395 @@ export default function Profile() {
       .slice(0, 6);
   }, [stats?.origin_distribution]);
 
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  // Vendas por dia
+  const salesChartData = useMemo(() => {
+    if (!salesByDay || salesByDay.length === 0) return [];
+    return salesByDay.map((d) => ({
+      date: new Date(d.date).toLocaleDateString("pt-BR", { month: "short", day: "numeric" }),
+      vendas: d.qtd_vendas,
+      receita: d.valor_total / 100, // converte centavos para reais
+    }));
+  }, [salesByDay]);
 
-  /** Tempo ganho */
-  const [humanSecondsPerMsg, setHumanSecondsPerMsg] = useState<number>(45);
+  // Tempo ganho
   const assistantSecondsPerMsg = (stats?.avg_assistant_response_ms ?? 3000) / 1000;
   const assistantMsgs = totalAssistant;
   const timeHuman = assistantMsgs * humanSecondsPerMsg;
   const timeAssistant = assistantMsgs * assistantSecondsPerMsg;
   const timeSavedSeconds = Math.max(0, timeHuman - timeAssistant);
-  const hhmm = (sec: number) => {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = Math.floor(sec % 60);
-    const parts = [h ? `${h}h` : null, m ? `${m}m` : null, s || (!h && !m) ? `${s}s` : null].filter(Boolean);
-    return parts.join(" ");
-  };
 
-  // Derivados
-  const msgsPerThread = (totalMsgs && stats?.threads) ? (totalMsgs / (stats.threads || 1)) : 0;
-  const takeoverPct = typeof stats?.takeover_rate === "number" ? Math.round(stats.takeover_rate * 100) : null;
+  // Taxa de conversão (se analytics disponível)
+  const conversionRate = analytics && analytics.total_threads > 0
+    ? ((analytics.sales_with_conversation / analytics.total_threads) * 100).toFixed(1)
+    : null;
 
   // Skeleton
   if (loading) {
     return (
-      <div style={{ padding: 14, display: "grid", gap: 12 }}>
-        <div className="profile-card" style={{ height: 120 }} />
-        <div className="profile-card" style={{ height: 120 }} />
-        <div className="profile-card" style={{ height: 320 }} />
+      <div style={{ 
+        padding: 24, 
+        display: "grid", 
+        gap: 20,
+        minHeight: "calc(100vh - 56px)",
+      }}>
+        <div className="card skeleton" style={{ height: 120 }} />
+        <div className="card skeleton" style={{ height: 200 }} />
+        <div className="card skeleton" style={{ height: 320 }} />
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        height: "calc(100vh - 56px)", // header global 56px
-        minHeight: 0,
-        overflow: "hidden",
-        display: "grid",
-        gridTemplateRows: "auto 1fr",
-        background: "var(--bg)",
-      }}
-    >
-      {/* Topo fixo */}
-      <div style={{ padding: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <button className="btn soft" onClick={() => navigate(-1)} title="Voltar" style={{ padding: "6px 10px" }}>
-            ← Voltar
-          </button>
-          <h2 className="profile-title" style={{ margin: 0 }}>Minha conta</h2>
+    <div style={{ 
+      minHeight: "calc(100vh - 56px)",
+      background: "var(--bg)",
+    }}>
+      {/* Header moderno */}
+      <div style={{
+        background: "var(--surface)",
+        borderBottom: "1px solid var(--border)",
+        boxShadow: "var(--shadow-sm)",
+        padding: isMobile ? "20px 16px" : "24px 32px",
+      }}>
+        <div style={{
+          maxWidth: 1400,
+          margin: "0 auto",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 16,
+          flexWrap: "wrap",
+        }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <button 
+              className="btn ghost" 
+              onClick={() => navigate(-1)} 
+              style={{ 
+                marginBottom: 12,
+                fontSize: 13,
+                padding: "6px 12px",
+              }}
+            >
+              ← Voltar
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              <div style={{
+                width: 64,
+                height: 64,
+                borderRadius: "var(--radius-lg)",
+                background: "var(--primary-soft)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 28,
+                fontWeight: 700,
+                color: "var(--primary-color)",
+                flexShrink: 0,
+              }}>
+                {initials(data.name, data.email)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <h1 style={{ 
+                  margin: 0, 
+                  fontSize: isMobile ? 24 : 28,
+                  fontWeight: 700,
+                  marginBottom: 6,
+                }}>
+                  {data.name || "Usuário"}
+                </h1>
+                <div style={{ 
+                  display: "flex", 
+                  flexWrap: "wrap", 
+                  gap: 12, 
+                  alignItems: "center",
+                  fontSize: 14,
+                  color: "var(--text-muted)",
+                }}>
+                  <span>{data.email}</span>
+                  <span className="badge badge-primary">{planLabel}</span>
+                  {stats?.last_activity && (
+                    <span>Última atividade: {formatDate(stats.last_activity)}</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Conteúdo rolável */}
-      <div
-        style={{
-          overflowY: "auto",
-          minHeight: 0,
-          padding: "0 14px 14px",
+      {/* Conteúdo principal */}
+      <div style={{
+        maxWidth: 1400,
+        margin: "0 auto",
+        padding: isMobile ? "20px 16px" : "32px",
+      }}>
+        {err && (
+          <div className="card" style={{ 
+            border: "1px solid var(--danger)", 
+            background: "var(--danger-soft)", 
+            color: "var(--danger)", 
+            padding: 16,
+            marginBottom: 24,
+          }}>
+            {err}
+          </div>
+        )}
+
+        {/* Métricas principais */}
+        <div style={{
           display: "grid",
-          gap: 14,
-          alignContent: "start",
-        }}
-      >
-        {/* Header */}
-        <div className="profile-card" style={{ display: "grid", gap: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <div
-              style={{
-                width: 56, height: 56, borderRadius: 999,
-                background: "var(--soft)", border: "1px solid var(--border)",
-                display: "grid", placeItems: "center", fontWeight: 700, fontSize: 18,
-              }}
-              aria-label="Avatar"
-            >
-              {initials(data.name, data.email)}
-            </div>
-
-            <div style={{ display: "grid", gap: 2 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                <strong style={{ fontSize: 18 }}>{data.name || "Usuário"}</strong>
-                <span className="badge">{planLabel}</span>
-              </div>
-              <div className="small">{data.email}</div>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
-            <KV k="ID" v={String(data.id)} />
-            <KV k="Plano" v={planLabel} />
-            <KV k="Criado em" v={formatDate(data.created_at)} />
-            <KV k="Última atividade" v={formatDate(stats?.last_activity ?? data.last_activity_at)} />
-          </div>
-        </div>
-
-        {/* KPIs gerais */}
-        <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-          <div className="profile-title">Seus números</div>
-          <div className="stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12 }}>
-            <StatCard title="Conversas (total)" value={stats?.threads ?? usage?.threads_total ?? 0} />
-            <StatCard title="Mensagens (total)" value={totalMsgs} />
-            <StatCard title="Você enviou" value={totalUser} />
-            <StatCard title="Assistente respondeu" value={totalAssistant} />
-            <StatCard title="Média msgs/conv." value={Number.isFinite(msgsPerThread) ? Number(msgsPerThread.toFixed(1)) : 0} />
-            {typeof stats?.active_days_30d === "number" && (
-              <div className="stat-cardx" style={{ textAlign: "center" }}>
-                <div className="stat-kpi">{stats.active_days_30d}/30</div>
-                <div className="stat-label" style={{ marginTop: 6 }}>Dias ativos (30d)</div>
-                <ProgressBar value={stats.active_days_30d} max={30} />
-              </div>
-            )}
-          </div>
-          {err && (
-            <div role="alert" style={{ border: "1px solid #7f1d1d", background: "#1b0f10", color: "#fecaca", padding: "10px 12px", borderRadius: 10, fontSize: 14 }}>
-              {err}
-            </div>
+          gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(200px, 1fr))",
+          gap: 16,
+          marginBottom: 24,
+        }}>
+          <StatCard 
+            title="Conversas" 
+            value={stats?.threads ?? usage?.threads_total ?? 0}
+            color="var(--primary-color)"
+          />
+          <StatCard 
+            title="Mensagens Total" 
+            value={totalMsgs}
+            color="var(--secondary-color)"
+          />
+          <StatCard 
+            title="Mensagens Enviadas" 
+            value={totalUser}
+            subtitle={`${totalAssistant} respostas do assistente`}
+            color="#6366f1"
+          />
+          {analytics && (
+            <>
+              <StatCard 
+                title="Vendas Totais" 
+                value={analytics.total_sales}
+                subtitle={`${analytics.sales_with_conversation} com conversa`}
+                color="var(--success)"
+              />
+              <StatCard 
+                title="Receita Total" 
+                valueLabel={formatCurrency(analytics.total_revenue)}
+                subtitle={`${analytics.active_subscriptions} assinaturas ativas`}
+                color="var(--success)"
+              />
+            </>
+          )}
+          {typeof stats?.active_days_30d === "number" && (
+            <StatCard 
+              title="Dias Ativos (30d)" 
+              value={stats.active_days_30d}
+              subtitle={`${Math.round((stats.active_days_30d / 30) * 100)}% do período`}
+              color="var(--primary-color)"
+            />
           )}
         </div>
 
-        {/* Visualizações principais */}
-        <div className="profile-card" style={{ display: "grid", gap: 16 }}>
-          <div className="profile-title" style={{ 
-            fontSize: isMobile ? 16 : 18, 
-            fontWeight: 600,
-            color: "var(--text)"
-          }}>
-            Visualizações
-          </div>
-          <div style={{ display: "grid", gap: 16, gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" }}>
-            {/* Gráfico de Pizza - Distribuição de mensagens */}
-            {pieData.some((d) => d.value > 0) && (
-            <div style={{ display: "grid", gap: 12 }}>
-                <div className="small" style={{ 
-                  fontWeight: 600,
-                  fontSize: isMobile ? 14 : 16,
-                  color: "var(--text)"
-                }}>
-                  Distribuição de mensagens
+        {/* Seção de Vendas e Receita */}
+        {analytics && (
+          <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+              Vendas e Receita
+            </h3>
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: 16,
+              marginBottom: 24,
+            }}>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Total de Vendas
                 </div>
-                <div style={{ 
-                  width: "100%", 
-                  height: isMobile ? 260 : 240, 
-                  display: "flex", 
-                  alignItems: "center", 
-                  justifyContent: "center"
-                }}>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--success)", marginBottom: 4 }}>
+                  {analytics.total_sales}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  {analytics.sales_with_conversation} com conversa • {analytics.sales_without_conversation} sem conversa
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Receita Total
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--success)", marginBottom: 4 }}>
+                  {formatCurrency(analytics.total_revenue)}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  Ticket médio: {analytics.total_sales > 0 ? formatCurrency(analytics.total_revenue / analytics.total_sales) : "—"}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Assinaturas
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: "var(--primary-color)", marginBottom: 4 }}>
+                  {analytics.active_subscriptions}/{analytics.total_subscriptions}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  {analytics.total_subscriptions > 0 ? Math.round((analytics.active_subscriptions / analytics.total_subscriptions) * 100) : 0}% ativas
+                </div>
+              </div>
+              {conversionRate && (
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    Taxa de Conversão
+                  </div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: "var(--secondary-color)", marginBottom: 4 }}>
+                    {conversionRate}%
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                    {analytics.sales_with_conversation} vendas de {analytics.total_threads} conversas
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Gráfico de vendas por dia */}
+            {salesChartData.length > 0 && (
+              <div style={{ marginTop: 24 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16, color: "var(--text)" }}>
+                  Vendas por Dia (últimos 30 dias)
+                </div>
+                <div style={{ width: "100%", height: isMobile ? 300 : 280 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={salesChartData} margin={{ top: 10, right: 10, left: 0, bottom: isMobile ? 50 : 30 }}>
+                      <defs>
+                        <linearGradient id="colorVendas" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorReceita" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                      <XAxis 
+                        dataKey="date" 
+                        stroke="var(--text-muted)"
+                        style={{ fontSize: isMobile ? 10 : 12 }}
+                        angle={isMobile ? -90 : -45}
+                        textAnchor="end"
+                        height={isMobile ? 80 : 60}
+                        interval={isMobile ? 2 : 0}
+                      />
+                      <YAxis yAxisId="left" stroke="var(--text-muted)" style={{ fontSize: 12 }} />
+                      <YAxis yAxisId="right" orientation="right" stroke="var(--text-muted)" style={{ fontSize: 12 }} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          background: "var(--surface)", 
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--text)"
+                        }}
+                      />
+                      <Legend />
+                      <Area 
+                        yAxisId="left"
+                        type="monotone" 
+                        dataKey="vendas" 
+                        name="Vendas" 
+                        stroke="#10b981" 
+                        fillOpacity={1} 
+                        fill="url(#colorVendas)"
+                        strokeWidth={2}
+                      />
+                      <Area 
+                        yAxisId="right"
+                        type="monotone" 
+                        dataKey="receita" 
+                        name="Receita (R$)" 
+                        stroke="#6366f1" 
+                        fillOpacity={1} 
+                        fill="url(#colorReceita)"
+                        strokeWidth={2}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Gráficos principais */}
+        <div style={{ display: "grid", gap: 24, marginBottom: 24 }}>
+          {/* Mensagens por dia */}
+          {chartData.length > 0 && (
+            <div className="card" style={{ padding: 24 }}>
+              <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+                Mensagens por Dia
+              </h3>
+              <div style={{ width: "100%", height: isMobile ? 300 : 280 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: isMobile ? 50 : 30 }}>
+                    <defs>
+                      <linearGradient id="colorUserProfile" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorAssistantProfile" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="var(--text-muted)"
+                      style={{ fontSize: isMobile ? 10 : 12 }}
+                      angle={isMobile ? -90 : -45}
+                      textAnchor="end"
+                      height={isMobile ? 80 : 60}
+                      interval={isMobile ? 2 : 0}
+                    />
+                    <YAxis stroke="var(--text-muted)" style={{ fontSize: 12 }} />
+                    <Tooltip 
+                      contentStyle={{ 
+                        background: "var(--surface)", 
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        color: "var(--text)"
+                      }}
+                    />
+                    <Legend />
+                    <Area 
+                      type="monotone" 
+                      dataKey="user" 
+                      name="Você" 
+                      stroke="#6366f1" 
+                      fillOpacity={1} 
+                      fill="url(#colorUserProfile)"
+                      strokeWidth={2}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="assistant" 
+                      name="Assistente" 
+                      stroke="#10b981" 
+                      fillOpacity={1} 
+                      fill="url(#colorAssistantProfile)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Grid de gráficos menores */}
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", 
+            gap: 24 
+          }}>
+            {/* Distribuição de mensagens */}
+            {pieData.some((d) => d.value > 0) && (
+              <div className="card" style={{ padding: 24 }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+                  Distribuição de Mensagens
+                </h3>
+                <div style={{ width: "100%", height: isMobile ? 260 : 240 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -483,7 +775,7 @@ export default function Profile() {
                         cx="50%"
                         cy="50%"
                         labelLine={false}
-                        label={({ name, percent }) => isMobile ? `${(percent * 100).toFixed(0)}%` : `${name}: ${(percent * 100).toFixed(0)}%`}
+                        label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                         outerRadius={isMobile ? 90 : 80}
                         fill="#8884d8"
                         dataKey="value"
@@ -494,7 +786,7 @@ export default function Profile() {
                       </Pie>
                       <Tooltip 
                         contentStyle={{ 
-                          background: "var(--panel)", 
+                          background: "var(--surface)", 
                           border: "1px solid var(--border)",
                           borderRadius: 8,
                           color: "var(--text)"
@@ -502,224 +794,98 @@ export default function Profile() {
                       />
                     </PieChart>
                   </ResponsiveContainer>
-            </div>
+                </div>
               </div>
             )}
-            {/* Gráfico de Área - Mensagens por dia */}
-            {chartData.length > 0 && (
-            <div style={{ display: "grid", gap: 12 }}>
-                <div className="small" style={{ 
-                  fontWeight: 600,
-                  fontSize: isMobile ? 14 : 16,
-                  color: "var(--text)"
-                }}>
-                  Mensagens por dia
-                </div>
-                <div style={{ 
-                  width: "100%", 
-                  height: isMobile ? 280 : 240, 
-                  overflow: "hidden",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}>
+
+            {/* Temperatura dos Leads */}
+            {leadDistribution.length > 0 && (
+              <div className="card" style={{ padding: 24 }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+                  Temperatura dos Leads
+                </h3>
+                <div style={{ width: "100%", height: isMobile ? 260 : 240 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={chartData} margin={{ 
-                      top: 10, 
-                      right: isMobile ? 5 : 5, 
-                      left: isMobile ? 5 : 5, 
-                      bottom: isMobile ? 50 : 5 
-                    }}>
-                      <defs>
-                        <linearGradient id="colorUserProfile" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorAssistantProfile" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
+                    <BarChart data={leadDistribution} layout="vertical" margin={{ top: 10, right: 10, left: isMobile ? 90 : 80, bottom: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis 
-                        dataKey="date" 
-                        stroke="var(--muted)"
-                        style={{ fontSize: isMobile ? 11 : 12 }}
-                        angle={isMobile ? -45 : 0}
-                        textAnchor={isMobile ? "end" : "middle"}
-                        height={isMobile ? 60 : 30}
+                      <XAxis type="number" stroke="var(--text-muted)" style={{ fontSize: 12 }} />
+                      <YAxis 
+                        dataKey="name" 
+                        type="category" 
+                        stroke="var(--text-muted)"
+                        style={{ fontSize: 12 }}
+                        width={isMobile ? 100 : 80}
                       />
-                      <YAxis stroke="var(--muted)" style={{ fontSize: isMobile ? 11 : 12 }} />
                       <Tooltip 
                         contentStyle={{ 
-                          background: "var(--panel)", 
+                          background: "var(--surface)", 
                           border: "1px solid var(--border)",
                           borderRadius: 8,
                           color: "var(--text)"
                         }}
                       />
-                      <Legend />
-                      <Area 
-                        type="monotone" 
-                        dataKey="user" 
-                        name="Você" 
-                        stroke="#6366f1" 
-                        fillOpacity={1} 
-                        fill="url(#colorUserProfile)"
-                        strokeWidth={2}
-                      />
-                      <Area 
-                        type="monotone" 
-                        dataKey="assistant" 
-                        name="Assistente" 
-                        stroke="#10b981" 
-                        fillOpacity={1} 
-                        fill="url(#colorAssistantProfile)"
-                        strokeWidth={2}
-                      />
-                    </AreaChart>
+                      <Bar dataKey="value" radius={[0, 8, 8, 0]}>
+                        {leadDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
-              </div>
+                </div>
               </div>
             )}
-            {chartData.length === 0 && (
-                <div className="small" style={{ opacity: 0.7 }}>Sem histórico suficiente para exibir o gráfico.</div>
-              )}
-            </div>
           </div>
 
-        {/* Novos gráficos */}
-        <div style={{ display: "grid", gap: 16, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
-          {/* Gráfico de barras - Distribuição de leads */}
-          {leadDistribution.length > 0 && (
-            <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-              <div className="profile-title" style={{ 
-                fontSize: isMobile ? 16 : 18, 
-                fontWeight: 600,
-                color: "var(--text)"
-              }}>
-                Temperatura dos Leads
-        </div>
-              <div style={{ 
-                width: "100%", 
-                height: isMobile ? 260 : 240,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center"
-              }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={leadDistribution} layout="vertical" margin={{ 
-                    top: 10, 
-                    right: isMobile ? 5 : 5, 
-                    left: isMobile ? 90 : 5, 
-                    bottom: 10 
-                  }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis type="number" stroke="var(--muted)" style={{ fontSize: isMobile ? 12 : 12 }} />
-                    <YAxis 
-                      dataKey="name" 
-                      type="category" 
-                      stroke="var(--muted)"
-                      style={{ fontSize: isMobile ? 12 : 12 }}
-                      width={isMobile ? 100 : 80}
-                    />
-                    <Tooltip 
-                      contentStyle={{ 
-                        background: "var(--panel)", 
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        color: "var(--text)"
-                      }}
-                    />
-                    <Bar dataKey="value" radius={[0, 8, 8, 0]}>
-                      {leadDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
-          {/* Gráfico de mensagens por hora */}
-          {hourlyData.some((d) => d.messages > 0) && (
-            <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-              <div className="profile-title" style={{ 
-                fontSize: isMobile ? 16 : 18, 
-                fontWeight: 600,
-                color: "var(--text)"
-              }}>
-                Mensagens por Hora
-              </div>
-              <div style={{ 
-                width: "100%", 
-                height: isMobile ? 300 : 240,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center"
-              }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={hourlyData} margin={{ 
-                    top: 10, 
-                    right: isMobile ? 5 : 5, 
-                    left: isMobile ? 5 : 5, 
-                    bottom: isMobile ? 60 : 30 
-                  }}>
+          {/* Mensagens por hora e Crescimento */}
+          <div style={{ 
+            display: "grid", 
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", 
+            gap: 24 
+          }}>
+            {/* Mensagens por hora */}
+            {hourlyData.some((d) => d.messages > 0) && (
+              <div className="card" style={{ padding: 24 }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+                  Mensagens por Hora do Dia
+                </h3>
+                <div style={{ width: "100%", height: isMobile ? 300 : 240 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={hourlyData} margin={{ top: 10, right: 10, left: 0, bottom: isMobile ? 60 : 30 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis 
                         dataKey="hour" 
-                        stroke="var(--muted)"
+                        stroke="var(--text-muted)"
                         style={{ fontSize: isMobile ? 10 : 11 }}
                         angle={isMobile ? -90 : -45}
                         textAnchor="end"
                         height={isMobile ? 80 : 60}
                         interval={isMobile ? 2 : 0}
                       />
-                      <YAxis stroke="var(--muted)" style={{ fontSize: isMobile ? 11 : 12 }} />
-                    <Tooltip 
-                      contentStyle={{ 
-                        background: "var(--panel)", 
-                        border: "1px solid var(--border)",
-                        borderRadius: 8,
-                        color: "var(--text)"
-                      }}
-                    />
-                    <Bar dataKey="messages" fill="#6366f1" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                      <YAxis stroke="var(--text-muted)" style={{ fontSize: 12 }} />
+                      <Tooltip 
+                        contentStyle={{ 
+                          background: "var(--surface)", 
+                          border: "1px solid var(--border)",
+                          borderRadius: 8,
+                          color: "var(--text)"
+                        }}
+                      />
+                      <Bar dataKey="messages" fill="#6366f1" radius={[8, 8, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
 
-        {/* Crescimento e Origem */}
-        {(growthData.length > 0 || originData.length > 0) && (
-          <div style={{ display: "grid", gap: 16, gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr" }}>
             {/* Crescimento de conversas */}
             {growthData.length > 0 && (
-              <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-                <div className="profile-title" style={{ 
-                  fontSize: isMobile ? 16 : 18, 
-                  fontWeight: 600,
-                  color: "var(--text)"
-                }}>
-                  Crescimento (30 dias)
-                </div>
-                <div style={{ 
-                  width: "100%", 
-                  height: isMobile ? 280 : 240,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}>
+              <div className="card" style={{ padding: 24 }}>
+                <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+                  Crescimento de Conversas (30 dias)
+                </h3>
+                <div style={{ width: "100%", height: isMobile ? 300 : 240 }}>
                   <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={growthData} margin={{ 
-                      top: 10, 
-                      right: isMobile ? 5 : 5, 
-                      left: isMobile ? 5 : 5, 
-                      bottom: isMobile ? 60 : 30 
-                    }}>
+                    <AreaChart data={growthData} margin={{ top: 10, right: 10, left: 0, bottom: isMobile ? 60 : 30 }}>
                       <defs>
                         <linearGradient id="colorGrowthProfile" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
@@ -729,17 +895,17 @@ export default function Profile() {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                       <XAxis 
                         dataKey="date" 
-                        stroke="var(--muted)"
+                        stroke="var(--text-muted)"
                         style={{ fontSize: isMobile ? 10 : 11 }}
                         angle={isMobile ? -90 : -45}
                         textAnchor="end"
                         height={isMobile ? 80 : 60}
                         interval={isMobile ? 2 : 0}
                       />
-                      <YAxis stroke="var(--muted)" style={{ fontSize: isMobile ? 11 : 12 }} />
+                      <YAxis stroke="var(--text-muted)" style={{ fontSize: 12 }} />
                       <Tooltip 
                         contentStyle={{ 
-                          background: "var(--panel)", 
+                          background: "var(--surface)", 
                           border: "1px solid var(--border)",
                           borderRadius: 8,
                           color: "var(--text)"
@@ -758,269 +924,251 @@ export default function Profile() {
                 </div>
               </div>
             )}
+          </div>
 
-            {/* Distribuição por origem */}
-            {originData.length > 0 && (
-              <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-                <div className="profile-title" style={{ 
-                  fontSize: isMobile ? 16 : 18, 
-                  fontWeight: 600,
-                  color: "var(--text)"
-                }}>
-                  Origem dos Contatos
+          {/* Origem dos contatos */}
+          {originData.length > 0 && (
+            <div className="card" style={{ padding: 24 }}>
+              <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+                Origem dos Contatos
+              </h3>
+              <div style={{ width: "100%", height: isMobile ? 300 : 240 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={originData} layout="vertical" margin={{ top: 10, right: 10, left: isMobile ? 110 : 100, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis type="number" stroke="var(--text-muted)" style={{ fontSize: 12 }} />
+                    <YAxis 
+                      dataKey="origin" 
+                      type="category" 
+                      stroke="var(--text-muted)"
+                      style={{ fontSize: 12 }}
+                      width={isMobile ? 120 : 100}
+                    />
+                    <Tooltip 
+                      contentStyle={{ 
+                        background: "var(--surface)", 
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        color: "var(--text)"
+                      }}
+                    />
+                    <Bar dataKey="count" fill="#f59e0b" radius={[0, 8, 8, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Métricas de Performance */}
+        <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+          <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+            Performance e Qualidade
+          </h3>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 16,
+          }}>
+            {typeof stats?.avg_assistant_response_ms === "number" && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Tempo Médio de Resposta
                 </div>
-                <div style={{ 
-                  width: "100%", 
-                  height: isMobile ? 260 : 240,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center"
-                }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={originData} layout="vertical" margin={{ 
-                      top: 10, 
-                      right: isMobile ? 5 : 5, 
-                      left: isMobile ? 110 : 5, 
-                      bottom: 10 
-                    }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                      <XAxis type="number" stroke="var(--muted)" style={{ fontSize: isMobile ? 12 : 12 }} />
-                      <YAxis 
-                        dataKey="origin" 
-                        type="category" 
-                        stroke="var(--muted)"
-                        style={{ fontSize: isMobile ? 12 : 12 }}
-                        width={isMobile ? 120 : 100}
-                      />
-                      <Tooltip 
-                        contentStyle={{ 
-                          background: "var(--panel)", 
-                          border: "1px solid var(--border)",
-                          borderRadius: 8,
-                          color: "var(--text)"
-                        }}
-                      />
-                      <Bar dataKey="count" fill="#f59e0b" radius={[0, 8, 8, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "var(--primary-color)" }}>
+                  {(stats.avg_assistant_response_ms / 1000).toFixed(1)}s
+                </div>
+              </div>
+            )}
+            {typeof stats?.response_rate === "number" && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Taxa de Resposta
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "var(--success)" }}>
+                  {stats.response_rate}%
+                </div>
+                <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+                  Conversas com resposta do assistente
+                </div>
+              </div>
+            )}
+            {takeoverPct != null && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Takeover Humano
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "var(--warning)" }}>
+                  {takeoverPct}%
+                </div>
+                <ProgressBar value={takeoverPct} max={100} color="var(--warning)" />
+              </div>
+            )}
+            {Number.isFinite(msgsPerThread) && (
+              <div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Média Mensagens/Conversa
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: "var(--text)" }}>
+                  {msgsPerThread.toFixed(1)}
                 </div>
               </div>
             )}
           </div>
-        )}
+        </div>
 
-        {/* Atendimento & Qualidade */}
-        {(stats?.first_response_time_ms_avg != null ||
-          stats?.resolution_time_ms_avg != null ||
-          stats?.assistant_latency_p50 != null ||
-          stats?.assistant_latency_p95 != null ||
-          stats?.takeover_rate != null) && (
-          <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-            <div className="profile-title">Atendimento & Qualidade</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
-              {typeof stats?.first_response_time_ms_avg === "number" && (
-                <StatCard title="FRT médio" valueLabel={`${Math.round(stats.first_response_time_ms_avg / 1000)}s`} />
-              )}
-              {typeof stats?.resolution_time_ms_avg === "number" && (
-                <StatCard title="TMR médio" valueLabel={hhmm(stats.resolution_time_ms_avg / 1000)} />
-              )}
-              {typeof stats?.assistant_latency_p50 === "number" && (
-                <StatCard title="Latência p50" valueLabel={`${Math.round(stats.assistant_latency_p50)} ms`} />
-              )}
-              {typeof stats?.assistant_latency_p95 === "number" && (
-                <StatCard title="Latência p95" valueLabel={`${Math.round(stats.assistant_latency_p95)} ms`} />
-              )}
-              {takeoverPct != null && (
-                <div className="stat-cardx" style={{ textAlign: "center" }}>
-                  <div className="stat-kpi">{takeoverPct}%</div>
-                  <div className="stat-label" style={{ marginTop: 6 }}>Takeover humano</div>
-                  <ProgressBar value={takeoverPct} max={100} />
-                </div>
-              )}
+        {/* Tempo ganho */}
+        {totalAssistant > 0 && (
+          <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+              Eficiência e Tempo Ganho
+            </h3>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 12 }}>
+                Baseado em <strong>{totalAssistant}</strong> respostas do assistente:
+              </div>
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+                gap: 16,
+                marginBottom: 20,
+              }}>
+                <StatCard 
+                  title="Se fosse humano" 
+                  valueLabel={formatTime(totalAssistant * humanSecondsPerMsg)}
+                  color="var(--danger)"
+                />
+                <StatCard 
+                  title="Com a assistente" 
+                  valueLabel={formatTime(totalAssistant * assistantSecondsPerMsg)}
+                  color="var(--primary-color)"
+                />
+                <StatCard 
+                  title="Tempo ganho" 
+                  valueLabel={formatTime(timeSavedSeconds)}
+                  color="var(--success)"
+                />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <label htmlFor="human-seconds" style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                  Tempo humano por mensagem:
+                </label>
+                <input
+                  id="human-seconds"
+                  type="number"
+                  min={1}
+                  max={600}
+                  step={1}
+                  value={humanSecondsPerMsg}
+                  onChange={(e) => {
+                    const v = Math.max(1, Number(e.target.value) || 1);
+                    setHumanSecondsPerMsg(v);
+                  }}
+                  className="input"
+                  style={{ width: 100 }}
+                />
+                <span style={{ fontSize: 12, color: "var(--text-muted)", opacity: 0.7 }}>
+                  (padrão: 45s)
+                </span>
+              </div>
             </div>
           </div>
         )}
 
-
+        {/* Distribuição de leads */}
+        {stats?.lead_levels && (
+          <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+              Distribuição de Leads por Temperatura
+            </h3>
+            <LeadDistribution 
+              frio={stats.lead_levels.frio || 0}
+              morno={stats.lead_levels.morno || 0}
+              quente={stats.lead_levels.quente || 0}
+            />
+          </div>
+        )}
 
         {/* Top contatos */}
-        {stats?.top_contacts?.length ? (
-          <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-            <div className="profile-title">Top contatos</div>
+        {stats?.top_contacts && stats.top_contacts.length > 0 && (
+          <div className="card" style={{ padding: 24, marginBottom: 24 }}>
+            <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+              Top Contatos
+            </h3>
             <div style={{ overflowX: "auto" }}>
-              <table className="small" style={{ width: "100%", borderCollapse: "collapse" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    <Th>Contato</Th>
-                    <Th>Total msgs</Th>
-                    <Th>Último contato</Th>
+                    <th style={{ textAlign: "left", fontWeight: 600, padding: "12px", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+                      Contato
+                    </th>
+                    <th style={{ textAlign: "right", fontWeight: 600, padding: "12px", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+                      Total Mensagens
+                    </th>
+                    <th style={{ textAlign: "left", fontWeight: 600, padding: "12px", borderBottom: "1px solid var(--border)", fontSize: 13 }}>
+                      Último Contato
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {stats.top_contacts!.map((c) => (
+                  {stats.top_contacts.map((c) => (
                     <tr key={c.id}>
-                      <Td>{c.name || c.id}</Td>
-                      <Td align="right">{c.total_msgs ?? 0}</Td>
-                      <Td>{formatDate(c.last_at)}</Td>
+                      <td style={{ padding: "12px", borderBottom: "1px solid var(--border-light)", fontSize: 14 }}>
+                        {c.name || `Contato #${c.id}`}
+                      </td>
+                      <td style={{ padding: "12px", borderBottom: "1px solid var(--border-light)", textAlign: "right", fontSize: 14, fontWeight: 600 }}>
+                        {c.total_msgs ?? 0}
+                      </td>
+                      <td style={{ padding: "12px", borderBottom: "1px solid var(--border-light)", fontSize: 13, color: "var(--text-muted)" }}>
+                        {formatDateTime(c.last_at)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </div>
-        ) : null}
-
-        {/* WhatsApp & Tokens */}
-        {(stats?.wa_templates_month != null || stats?.wa_sessions_month != null || stats?.tokens_month) && (
-          <div className="profile-card" style={{ display: "grid", gap: 16 }}>
-            <div className="profile-title">Uso de canais & custo</div>
-
-            {(typeof stats?.wa_templates_month === "number" || typeof stats?.wa_sessions_month === "number") && (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div className="small" style={{ fontWeight: 600 }}>WhatsApp (mês atual)</div>
-                <MiniBar
-                  a={stats?.wa_templates_month ?? 0}
-                  b={stats?.wa_sessions_month ?? 0}
-                  labelA="Templates"
-                  labelB="Sessões (24h)"
-                />
-              </div>
-            )}
-
-            {stats?.tokens_month && (
-              <div style={{ display: "grid", gap: 10 }}>
-                <div className="small" style={{ fontWeight: 600 }}>Tokens (mês atual)</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 12 }}>
-                  <StatCard title="Prompt tokens" value={stats.tokens_month.prompt ?? 0} />
-                  <StatCard title="Completion tokens" value={stats.tokens_month.completion ?? 0} />
-                </div>
-              </div>
-            )}
-          </div>
         )}
 
-        {/* Tabela por dia + Tempo ganho */}
-        <div style={{ display: "grid", gap: 14 }}>
-          <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-            <div className="profile-title">Relação de mensagens por dia</div>
-            <div style={{ overflowX: "auto" }}>
-              <table className="small" style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr>
-                    <Th>Data</Th>
-                    <Th>Você</Th>
-                    <Th>Assistente</Th>
-                    <Th>Total</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chartData.map((d) => {
-                    const tot = d.user + d.assistant;
-                    return (
-                      <tr key={d.date}>
-                        <Td>{d.date}</Td>
-                        <Td align="right">{d.user}</Td>
-                        <Td align="right">{d.assistant}</Td>
-                        <Td align="right"><strong>{tot}</strong></Td>
-                      </tr>
-                    );
-                  })}
-                  {!chartData.length && (
-                    <tr><Td colSpan={4} align="center">Sem dados ainda.</Td></tr>
-                  )}
-                </tbody>
-              </table>
+        {/* Informações da conta */}
+        <div className="card" style={{ padding: 24 }}>
+          <h3 style={{ margin: "0 0 20px 0", fontSize: 18, fontWeight: 600 }}>
+            Informações da Conta
+          </h3>
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 16,
+          }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                ID
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>{String(data.id)}</div>
             </div>
-          </div>
-
-          <div className="profile-card" style={{ display: "grid", gap: 16 }}>
-            <div className="profile-title">Tempo ganho (assistente vs. humano)</div>
-            <div className="small" style={{ lineHeight: 1.6 }}>
-              Baseado em <strong>{totalAssistant}</strong> respostas da assistente:
+            <div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Plano
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>{planLabel}</div>
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-              <StatCard title="Se fosse humano" valueLabel={hhmm(totalAssistant * humanSecondsPerMsg)} />
-              <StatCard title="Com a assistente" valueLabel={hhmm(totalAssistant * assistantSecondsPerMsg)} />
-              <StatCard title="Tempo ganho" valueLabel={hhmm(timeSavedSeconds)} />
+            <div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Criado em
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>{formatDate(data.created_at)}</div>
             </div>
-            <div className="small" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <label htmlFor="human-seconds">Tempo humano por mensagem:</label>
-              <input
-                id="human-seconds"
-                type="number"
-                min={1}
-                max={600}
-                step={1}
-                value={humanSecondsPerMsg}
-                onChange={(e) => {
-                  const v = Math.max(1, Number(e.target.value) || 1);
-                  setHumanSecondsPerMsg(v);
-                }}
-                style={{ width: 100, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border)", background: "transparent", color: "var(--text)" }}
-              />
-              <span style={{ opacity: 0.8 }}>(padrão: 45s)</span>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Última Atividade
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 500 }}>
+                {formatDateTime(stats?.last_activity ?? data.last_activity_at)}
+              </div>
             </div>
           </div>
         </div>
-
-        {/* Onboarding */}
-        {(stats?.onboarding_total_steps || stats?.is_onboarded) && (
-          <div className="profile-card" style={{ display: "grid", gap: 12 }}>
-            <div className="profile-title">Onboarding</div>
-            {stats?.is_onboarded ? (
-              <div className="small">✅ Onboarding concluído.</div>
-            ) : (
-              <>
-                <div className="small">
-                  Progresso:{" "}
-                  <strong>
-                    {stats?.onboarding_current_step ?? 0}/{stats?.onboarding_total_steps ?? 0}
-                  </strong>
-                </div>
-                <ProgressBar
-                  value={stats?.onboarding_current_step ?? 0}
-                  max={stats?.onboarding_total_steps ?? 0}
-                />
-                <div>
-                  <button className="btn">Continuar onboarding</button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
       </div>
     </div>
-  );
-}
-
-/** =========================
- * Helpers visuais
- * ========================= */
-function KV({ k, v }: { k: string; v: string }) {
-  return (
-    <div className="kv"><span className="kv-k">{k}</span><span className="kv-v">{v}</span></div>
-  );
-}
-
-function StatCard({ title, value, valueLabel }: { title: string; value?: number; valueLabel?: string }) {
-  return (
-    <div className="stat-cardx" style={{ textAlign: "center" }}>
-      <div className="stat-kpi">{typeof valueLabel === "string" ? valueLabel : value ?? 0}</div>
-      <div className="stat-label" style={{ marginTop: 6 }}>{title}</div>
-    </div>
-  );
-}
-function Th({ children }: { children: React.ReactNode }) {
-  return (
-    <th style={{ textAlign: "left", fontWeight: 600, padding: "8px 10px", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>
-      {children}
-    </th>
-  );
-}
-function Td({ children, align, colSpan }: { children: React.ReactNode; align?: "left" | "right" | "center"; colSpan?: number }) {
-  return (
-    <td style={{ textAlign: align || "left", padding: "8px 10px", borderBottom: "1px solid var(--soft)", whiteSpace: "nowrap" }} colSpan={colSpan}>
-      {children}
-    </td>
   );
 }

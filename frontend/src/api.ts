@@ -253,6 +253,17 @@ export async function postHumanReply(
   return data;
 }
 
+export async function sendAudio(
+  threadId: number | string,
+  audioId: string
+): Promise<{ ok: boolean; message_id: number; audio_id: string; sent: boolean; sid?: string }> {
+  const { data } = await api.post<{ ok: boolean; message_id: number; audio_id: string; sent: boolean; sid?: string }>(
+    `/threads/${threadId}/send-audio`,
+    { audio_id: audioId }
+  );
+  return data;
+}
+
 // ==================== Tasks (CRUD) ====================
 export async function listTasks(): Promise<Task[]> {
   const { data } = await api.get<Task[]>("/tasks");
