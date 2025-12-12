@@ -7,6 +7,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Request, Header, HTTPException, Depends
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from ..db import get_db
 from ..models import Contact, SaleEvent, SubscriptionExternal, ProductExternal, CartEvent
@@ -371,7 +372,83 @@ async def webhook_eduzz(
 
     db.commit()
     
-    # 12) Envia mensagem pós-compra se a venda foi aprovada e contato tem thread
+    # 12) Busca link de acesso personalizado da The Members (se disponível)
+    access_link = None
+    if themembers_subscription or themembers_user:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # Subscription pode ser um array ou um objeto
+        subscription_list = []
+        if themembers_subscription:
+            if isinstance(themembers_subscription, list):
+                subscription_list = themembers_subscription
+            elif isinstance(themembers_subscription, dict):
+                subscription_list = [themembers_subscription]
+        
+        # Tenta pegar link de acesso da subscription (primeira do array se for array)
+        if subscription_list:
+            subscription_data = subscription_list[0] if subscription_list else {}
+            # Log para debug (apenas em desenvolvimento)
+            if os.getenv("ENVIRONMENT") != "production":
+                logger.debug(f"[EDUZZ_WEBHOOK] Subscription data keys: {list(subscription_data.keys()) if isinstance(subscription_data, dict) else 'not a dict'}")
+            
+            # Tenta vários campos possíveis
+            access_link = (
+                subscription_data.get("access_link") or 
+                subscription_data.get("link") or 
+                subscription_data.get("access_url") or
+                subscription_data.get("first_access_link") or
+                subscription_data.get("first_access_url") or
+                subscription_data.get("login_link") or
+                subscription_data.get("login_url") or
+                subscription_data.get("url") or
+                subscription_data.get("access") or
+                subscription_data.get("course_access_link") or
+                subscription_data.get("course_link")
+            )
+        
+        # Se não encontrou na subscription, tenta no user
+        if not access_link and themembers_user:
+            user_data = themembers_user if isinstance(themembers_user, dict) else {}
+            # Log para debug
+            if os.getenv("ENVIRONMENT") != "production":
+                logger.debug(f"[EDUZZ_WEBHOOK] User data keys: {list(user_data.keys()) if isinstance(user_data, dict) else 'not a dict'}")
+            
+            access_link = (
+                user_data.get("access_link") or 
+                user_data.get("link") or 
+                user_data.get("access_url") or
+                user_data.get("first_access_link") or
+                user_data.get("first_access_url") or
+                user_data.get("login_link") or
+                user_data.get("login_url") or
+                user_data.get("url") or
+                user_data.get("access") or
+                user_data.get("course_access_link") or
+                user_data.get("course_link")
+            )
+        
+        # Se ainda não encontrou, tenta construir o link manualmente usando user_id
+        if not access_link and themembers_user:
+            user_id = themembers_user.get("id") if isinstance(themembers_user, dict) else None
+            if user_id:
+                base_url = os.getenv("THEMEMBERS_BASE_URL", "https://registration.themembers.dev.br/api").replace("/api", "")
+                
+                # Formato do link configurável via variável de ambiente
+                # Opções: "access/{user_id}", "first-access/{user_id}", "login?user_id={user_id}", etc.
+                link_format = os.getenv("THEMEMBERS_ACCESS_LINK_FORMAT", "first-access/{user_id}")
+                
+                # Substitui {user_id} pelo ID real
+                access_link = f"{base_url}/{link_format}".replace("{user_id}", str(user_id))
+                
+                logger.info(f"[EDUZZ_WEBHOOK] Link de acesso construído: {access_link}")
+        
+        # Se ainda não encontrou, loga para investigação
+        if not access_link:
+            logger.info(f"[EDUZZ_WEBHOOK] Link de acesso não encontrado na resposta da The Members. Subscription: {bool(subscription_list)}, User: {bool(themembers_user)}")
+    
+    # 13) Envia mensagem pós-compra se a venda foi aprovada e contato tem thread
     post_purchase_sent = False
     if event == "sale.approved" and contact and contact.thread_id:
         try:
@@ -380,6 +457,7 @@ async def webhook_eduzz(
                 contact=contact,
                 sale_event=sale_event,
                 plan_type=plan_type or "mensal",
+                access_link=access_link,
             )
             # Atualiza flag no sale_event
             sale_event.post_purchase_sent = post_purchase_sent
@@ -398,4 +476,387 @@ async def webhook_eduzz(
         "plan_type": plan_type,
         "post_purchase_sent": post_purchase_sent,
     }
+
+
+# ==================== ENDPOINT DE TESTE ====================
+
+class TestSaleRequest(BaseModel):
+    """Payload para simular uma compra de teste"""
+    buyer_email: str
+    buyer_name: Optional[str] = None
+    buyer_phone: Optional[str] = None
+    product_id: Optional[str] = None  # "2457307" (mensal) ou "2562423" (anual)
+    value: Optional[int] = None  # em centavos: 6990 (mensal) ou 59880 (anual)
+    order_id: Optional[str] = None
+    plan_type: Optional[str] = None  # "mensal" ou "anual" (opcional, será detectado automaticamente)
+
+
+@router.post("/test-sale", tags=["webhooks"])
+async def test_sale_webhook(
+    body: TestSaleRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint de TESTE para simular uma compra sem precisar comprar de verdade.
+    
+    ⚠️ ATENÇÃO: Este endpoint só funciona em ambiente de desenvolvimento/teste.
+    Ele simula o webhook da Eduzz sem validar assinatura HMAC.
+    
+    Exemplo de uso:
+    ```bash
+    curl -X POST http://localhost:8000/webhook/test-sale \
+      -H "Content-Type: application/json" \
+      -d '{
+        "buyer_email": "teste@exemplo.com",
+        "buyer_name": "Maria Silva",
+        "buyer_phone": "+5561999999999",
+        "product_id": "2457307",
+        "value": 6990
+      }'
+    ```
+    """
+    # Verifica se está em modo de desenvolvimento
+    if os.getenv("ENVIRONMENT") == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Este endpoint de teste não está disponível em produção"
+        )
+    
+    # Prepara payload simulado do Eduzz
+    order_id = body.order_id or f"TEST-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    product_id = body.product_id or "2457307"  # Default: mensal
+    value = body.value or 6990  # Default: R$ 69,90
+    
+    # Detecta tipo de plano se não foi fornecido
+    plan_type = body.plan_type or identify_plan_type(product_id, value)
+    
+    # Cria payload simulado
+    simulated_payload = {
+        "event": "sale.approved",
+        "event_id": f"TEST-{order_id}",
+        "order_id": order_id,
+        "buyer_email": body.buyer_email,
+        "buyer_name": body.buyer_name or "Cliente Teste",
+        "buyer_phone": body.buyer_phone,
+        "product_id": product_id,
+        "value": value,
+        "timestamp": datetime.now().isoformat(),
+        "invoice_status": "paid",
+        "status": "approved",
+    }
+    
+    # Se forneceu telefone, busca ou cria thread primeiro
+    thread = None
+    if body.buyer_phone:
+        from ..models import Thread
+        
+        # Função para normalizar telefone (mesma lógica do webhook)
+        def _normalize_phone(phone: str) -> str:
+            if not phone:
+                return ""
+            normalized = str(phone).replace("whatsapp:", "").strip()
+            normalized = normalized.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+            if normalized and not normalized.startswith("+"):
+                normalized = "+" + normalized
+            return normalized
+        
+        normalized_phone = _normalize_phone(body.buyer_phone)
+        
+        # Busca thread existente com esse telefone
+        threads = db.query(Thread).filter(Thread.external_user_phone.isnot(None)).all()
+        for t in threads:
+            if _normalize_phone(t.external_user_phone) == normalized_phone:
+                thread = t
+                break
+        
+        # Se não encontrou thread, cria uma nova automaticamente
+        if not thread:
+            from ..models import User
+            default_user = db.query(User).filter(User.email == "Admin").first()
+            user_id = default_user.id if default_user else None
+            
+            thread = Thread(
+                user_id=user_id,
+                title=body.buyer_name or f"WhatsApp {normalized_phone[-4:]}",
+                external_user_phone=normalized_phone,
+                origin="test",
+            )
+            db.add(thread)
+            db.flush()
+            
+            # Cria uma mensagem inicial para simular conversa
+            from ..models import Message
+            initial_message = Message(
+                thread_id=thread.id,
+                role="user",
+                content="Oi, quero saber do LIFE",
+            )
+            db.add(initial_message)
+            db.commit()
+            db.refresh(thread)
+    
+    # Busca contato existente por email OU por thread_id (se thread foi encontrada/criada)
+    contact = None
+    if thread:
+        # Primeiro tenta buscar contato que já está vinculado a essa thread
+        contact = db.query(Contact).filter(Contact.thread_id == thread.id).first()
+    
+    # Se não encontrou por thread, busca por email
+    if not contact:
+        contact = db.query(Contact).filter(Contact.email == body.buyer_email).first()
+    
+    # Se ainda não encontrou, cria novo contato
+    if not contact:
+        from ..models import User
+        default_user = db.query(User).filter(User.email == "Admin").first()
+        user_id = default_user.id if default_user else None
+        
+        contact = Contact(
+            email=body.buyer_email,
+            name=body.buyer_name or "Cliente Teste",
+            phone=body.buyer_phone,
+            user_id=user_id,
+            thread_id=thread.id if thread else None,
+        )
+        db.add(contact)
+        db.flush()
+    else:
+        # Atualiza contato existente (mas só vincula thread se não tiver uma já)
+        if thread and not contact.thread_id:
+            # Verifica se já existe outro contato com essa thread
+            existing_contact_with_thread = db.query(Contact).filter(Contact.thread_id == thread.id).first()
+            if not existing_contact_with_thread:
+                contact.thread_id = thread.id
+            elif existing_contact_with_thread.id != contact.id:
+                # Já existe outro contato com essa thread, não vincula
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"[TEST_SALE] Thread {thread.id} já está vinculada ao contato {existing_contact_with_thread.id}. Não vinculando contato {contact.id}.")
+        
+        # Atualiza email se não tiver
+        if not contact.email:
+            contact.email = body.buyer_email
+        # Atualiza telefone se não tiver
+        if not contact.phone and body.buyer_phone:
+            contact.phone = body.buyer_phone
+    
+    db.commit()
+    db.refresh(contact)
+    
+    # Se não tem thread vinculada, avisa mas continua
+    if not contact.thread_id:
+        return {
+            "status": "warning",
+            "message": f"Contato criado/encontrado (ID: {contact.id}), mas não tem thread vinculada. A mensagem pós-compra não será enviada.",
+            "contact_id": contact.id,
+            "buyer_email": body.buyer_email,
+            "note": "Para enviar mensagem pós-compra, forneça um telefone válido. Uma thread será criada automaticamente.",
+        }
+    
+    # Processa como se fosse um webhook real (mas sem validar assinatura)
+    # Usa a mesma lógica do webhook real
+    try:
+        # Identifica tipo de plano
+        plan_type = identify_plan_type(product_id, value)
+        
+        # Cria SaleEvent
+        sale_event = SaleEvent(
+            source="test",
+            event="sale.approved",
+            event_id=simulated_payload["event_id"],
+            order_id=order_id,
+            buyer_email=body.buyer_email,
+            buyer_name=body.buyer_name or "Cliente Teste",
+            value=value,
+            product_id=product_id,
+            plan_type=plan_type,
+            contact_id=contact.id,
+            raw_payload=simulated_payload,
+        )
+        db.add(sale_event)
+        db.flush()
+        
+        # Tenta criar usuário na The Members (opcional - pode falhar se não configurado)
+        themembers_user_id = None
+        access_link = None
+        try:
+            themembers_user, themembers_subscription = await get_user_by_email(body.buyer_email)
+            
+            if not themembers_user:
+                # Tenta criar usuário na The Members
+                buyer_name = body.buyer_name or "Cliente"
+                buyer_last_name = "Teste"
+                if " " in buyer_name:
+                    parts = buyer_name.split(" ", 1)
+                    buyer_name = parts[0]
+                    buyer_last_name = parts[1]
+                
+                created_response = await create_user_with_product(
+                    email=body.buyer_email,
+                    name=buyer_name,
+                    last_name=buyer_last_name,
+                    phone=body.buyer_phone,
+                    reference_id=order_id,
+                    accession_date=datetime.now().strftime("%Y-%m-%d"),
+                    product_id=os.getenv("THEMEMBERS_DEFAULT_PRODUCT_ID", "2352153"),
+                )
+                
+                # Busca novamente para pegar subscription
+                themembers_user, themembers_subscription = await get_user_by_email(body.buyer_email)
+            
+            if themembers_user:
+                themembers_user_id = str(themembers_user.get("id", ""))
+                contact.themembers_user_id = themembers_user_id
+                
+                # Busca link de acesso (subscription pode ser array)
+                if themembers_subscription:
+                    subscription_list = []
+                    if isinstance(themembers_subscription, list):
+                        subscription_list = themembers_subscription
+                    elif isinstance(themembers_subscription, dict):
+                        subscription_list = [themembers_subscription]
+                    
+                    if subscription_list:
+                        subscription_data = subscription_list[0]
+                        access_link = (
+                            subscription_data.get("access_link") or 
+                            subscription_data.get("link") or 
+                            subscription_data.get("access_url") or
+                            subscription_data.get("first_access_link") or
+                            subscription_data.get("first_access_url") or
+                            subscription_data.get("login_link") or
+                            subscription_data.get("login_url")
+                        )
+                
+                # Se não encontrou na subscription, tenta construir o link manualmente usando user_id
+                if not access_link and themembers_user:
+                    user_id = themembers_user.get("id") if isinstance(themembers_user, dict) else None
+                    if user_id:
+                        base_url = os.getenv("THEMEMBERS_BASE_URL", "https://registration.themembers.dev.br/api").replace("/api", "")
+                        
+                        # Formato do link configurável via variável de ambiente
+                        link_format = os.getenv("THEMEMBERS_ACCESS_LINK_FORMAT", "first-access/{user_id}")
+                        
+                        # Substitui {user_id} pelo ID real
+                        access_link = f"{base_url}/{link_format}".replace("{user_id}", str(user_id))
+                        
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"[TEST_SALE] Link de acesso construído: {access_link}")
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"[TEST_SALE] Não foi possível criar/buscar usuário na The Members: {str(e)}")
+        
+        sale_event.themembers_user_id = themembers_user_id
+        db.commit()
+        
+        # Envia mensagem pós-compra
+        post_purchase_sent = False
+        if contact.thread_id:
+            try:
+                post_purchase_sent = send_post_purchase_message(
+                    db=db,
+                    contact=contact,
+                    sale_event=sale_event,
+                    plan_type=plan_type,
+                    access_link=access_link,
+                )
+                sale_event.post_purchase_sent = post_purchase_sent
+                db.commit()
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"[TEST_SALE] Erro ao enviar mensagem pós-compra: {str(e)}", exc_info=True)
+        
+        return {
+            "status": "ok",
+            "message": "Compra simulada com sucesso!",
+            "contact_id": contact.id,
+            "thread_id": contact.thread_id,
+            "thread_created": thread.id if thread else None,
+            "themembers_user_id": themembers_user_id,
+            "plan_type": plan_type,
+            "post_purchase_sent": post_purchase_sent,
+            "access_link": access_link or "[LINK PERSONALIZADO]",
+            "order_id": order_id,
+            "phone": body.buyer_phone,
+        }
+        
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[TEST_SALE] Erro ao processar compra simulada: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao processar compra simulada: {str(e)}"
+        )
+
+
+@router.get("/debug/themembers/{email}", tags=["webhooks"])
+async def debug_themembers_user(
+    email: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Endpoint de DEBUG para verificar o que a API da The Members retorna.
+    Útil para descobrir qual campo contém o link de acesso.
+    """
+    if os.getenv("ENVIRONMENT") == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Este endpoint de debug não está disponível em produção"
+        )
+    
+    try:
+        user, subscription = await get_user_by_email(email)
+        
+        # Processa subscription (pode ser array ou objeto)
+        subscription_list = []
+        subscription_keys = None
+        if subscription:
+            if isinstance(subscription, list):
+                subscription_list = subscription
+                if subscription_list and isinstance(subscription_list[0], dict):
+                    subscription_keys = list(subscription_list[0].keys())
+            elif isinstance(subscription, dict):
+                subscription_list = [subscription]
+                subscription_keys = list(subscription.keys())
+        
+        # Tenta construir link possível
+        possible_links = []
+        if user and isinstance(user, dict):
+            user_id = user.get("id")
+            if user_id:
+                base_url = os.getenv("THEMEMBERS_BASE_URL", "https://registration.themembers.dev.br/api").replace("/api", "")
+                possible_links = [
+                    f"{base_url}/access/{user_id}",
+                    f"{base_url}/login?user_id={user_id}",
+                    f"{base_url}/first-access/{user_id}",
+                    f"{base_url}/access?token={user_id}",
+                    f"{base_url}/login/{user_id}",
+                ]
+        
+        return {
+            "email": email,
+            "user_found": user is not None,
+            "subscription_found": subscription is not None,
+            "user": user,
+            "subscription": subscription,
+            "subscription_is_array": isinstance(subscription, list),
+            "subscription_count": len(subscription_list) if subscription_list else 0,
+            "user_keys": list(user.keys()) if isinstance(user, dict) else None,
+            "subscription_keys": subscription_keys,
+            "user_id": user.get("id") if isinstance(user, dict) else None,
+            "possible_access_links": possible_links,
+            "note": "Se nenhum link funcionar, verifique a documentação da API da The Members ou entre em contato com o suporte para descobrir o formato correto do link de acesso.",
+        }
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[DEBUG_THEMEMBERS] Erro: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao buscar usuário: {str(e)}"
+        )
 

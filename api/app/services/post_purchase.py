@@ -5,11 +5,13 @@ Dispara mensagem de boas-vindas após confirmação de venda via webhook Eduzz.
 """
 import os
 import logging
+import asyncio
 from typing import Optional
 from sqlalchemy.orm import Session
 
 from ..models import Contact, Thread, SaleEvent
-from ..providers.twilio import send_text
+from ..providers.twilio import send_text as twilio_send_text, is_configured as twilio_is_configured
+from ..providers import meta as meta_provider
 
 logger = logging.getLogger(__name__)
 
@@ -62,21 +64,26 @@ def identify_plan_type(product_id: Optional[str], value: Optional[int]) -> str:
     return "mensal"
 
 
-def get_post_purchase_message(contact_name: Optional[str] = None, plan_type: str = "mensal") -> str:
+def get_post_purchase_message(
+    contact_name: Optional[str] = None, 
+    plan_type: str = "mensal",
+    access_link: Optional[str] = None
+) -> str:
     """
     Gera a mensagem de pós-compra personalizada.
     
     Args:
         contact_name: Nome do contato (opcional)
         plan_type: Tipo de plano ("mensal" ou "anual")
+        access_link: Link personalizado de acesso da The Members (opcional)
     
     Returns:
         Mensagem formatada
     """
     nome = contact_name or "gatinha"
     
-    # TODO: Buscar link personalizado da The Members se disponível
-    link_personalizado = "[LINK PERSONALIZADO]"  # Substituir por link real quando disponível
+    # Usa link personalizado se fornecido, senão usa placeholder
+    link_personalizado = access_link or "[LINK PERSONALIZADO]"
     
     mensagem = f"""*AGORA VOCÊ FAZ PARTE DO LIFE!! Vamos nessa juntas 🩷*
 
@@ -116,6 +123,7 @@ def send_post_purchase_message(
     contact: Contact,
     sale_event: SaleEvent,
     plan_type: str,
+    access_link: Optional[str] = None,
 ) -> bool:
     """
     Envia mensagem de pós-compra via WhatsApp se o contato tiver uma thread ativa.
@@ -148,16 +156,68 @@ def send_post_purchase_message(
         # Gera mensagem personalizada
         mensagem = get_post_purchase_message(
             contact_name=contact.name,
-            plan_type=plan_type
+            plan_type=plan_type,
+            access_link=access_link
         )
         
-        # Envia mensagem via Twilio
-        logger.info(f"[POST_PURCHASE] Enviando mensagem pós-compra para thread {thread.id} (contato {contact.id}, plano {plan_type})")
-        send_text(
-            to_e164=thread.external_user_phone,
-            body=mensagem,
-            sender="BOT"
-        )
+        # Escolhe o provider: Twilio se habilitado e configurado, senão Meta
+        enable_twilio = os.getenv("ENABLE_TWILIO", "true").lower() == "true"
+        use_twilio = enable_twilio and twilio_is_configured()
+        
+        # Verifica se Meta está configurado
+        meta_access_token = os.getenv("META_ACCESS_TOKEN")
+        meta_phone_number_id = os.getenv("META_PHONE_NUMBER_ID")
+        meta_configured = bool(meta_access_token and meta_phone_number_id)
+        
+        if not use_twilio and not meta_configured:
+            logger.error(f"[POST_PURCHASE] ❌ Nenhum provider configurado! Twilio desabilitado e Meta sem credenciais.")
+            logger.error(f"[POST_PURCHASE] Configure ENABLE_TWILIO=true ou forneça META_ACCESS_TOKEN e META_PHONE_NUMBER_ID")
+            return False
+        
+        logger.info(f"[POST_PURCHASE] Enviando mensagem pós-compra para thread {thread.id} (contato {contact.id}, plano {plan_type}) via {'Twilio' if use_twilio else 'Meta'}")
+        
+        if use_twilio:
+            # Usa Twilio (síncrono)
+            result = twilio_send_text(
+                to_e164=thread.external_user_phone,
+                body=mensagem,
+                sender="BOT"
+            )
+            if not result:
+                logger.warning(f"[POST_PURCHASE] Twilio retornou vazio, tentando Meta como fallback")
+                use_twilio = False
+        
+        if not use_twilio:
+            if not meta_configured:
+                logger.error(f"[POST_PURCHASE] ❌ Meta não está configurado. Não é possível enviar mensagem.")
+                return False
+            
+            # Usa Meta (assíncrono)
+            try:
+                # Remove o prefixo "whatsapp:" se existir para Meta
+                phone = thread.external_user_phone
+                if phone.startswith("whatsapp:"):
+                    phone = phone.replace("whatsapp:", "")
+                elif not phone.startswith("+"):
+                    phone = f"+{phone}"
+                
+                # Executa a função assíncrona de forma segura
+                try:
+                    # Tenta obter o loop atual
+                    loop = asyncio.get_running_loop()
+                    # Se chegou aqui, há um loop rodando - usa ThreadPoolExecutor
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, meta_provider.send_text(phone, mensagem))
+                        result = future.result(timeout=30)
+                except RuntimeError:
+                    # Não há loop rodando, pode usar asyncio.run diretamente
+                    result = asyncio.run(meta_provider.send_text(phone, mensagem))
+                
+                logger.info(f"[POST_PURCHASE] ✅ Mensagem enviada via Meta: {result}")
+            except Exception as meta_error:
+                logger.error(f"[POST_PURCHASE] ❌ Erro ao enviar via Meta: {str(meta_error)}")
+                raise
         
         logger.info(f"[POST_PURCHASE] ✅ Mensagem pós-compra enviada com sucesso para contato {contact.id}")
         return True
