@@ -22,6 +22,12 @@ httpx==0.27.2
 openai==1.52.0
 twilio>=9.0.0,<10
 
+# Google APIs (Gmail para capturar links de acesso)
+google-api-python-client==2.108.0
+google-auth==2.25.2
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+
 # PDF processing for RAG
 PyPDF2==3.0.1
 
