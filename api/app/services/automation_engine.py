@@ -422,7 +422,8 @@ async def process_automation(
     phone_number: str,
     thread_meta: Optional[Dict] = None,
     db_session = None,
-    thread_id: Optional[int] = None
+    thread_id: Optional[int] = None,
+    message_history: Optional[List[Dict]] = None
 ) -> Tuple[Optional[str], Dict[str, Any], bool]:
     """
     Processa automação baseado na mensagem e estado atual.
@@ -456,18 +457,70 @@ async def process_automation(
         return None, {"support_detected": True, "reason": support_reason, "need_human": True}, True
     
     # 2. DETECÇÃO DE GATILHOS DO FUNIL LONGO
-    # CORREÇÃO D: Usa intent_classifier para distinguir ASK_PLANS vs CHOOSE_PLAN ANTES de detectar trigger
-    from .intent_classifier import detect_plans_intent
+    # CORREÇÃO: Verifica se há mensagens anteriores com dor antes de detectar trigger
+    # Se já houve indicação de dor, qualquer mensagem subsequente dispara PACOTE_FASE_2
+    current_stage = thread_meta.get("lead_stage") if thread_meta else None
     
-    # Detecta intent primeiro para ajustar trigger
-    intent = detect_plans_intent(message, thread_meta.get("lead_stage"))
+    # Verifica se há mensagens anteriores com dor (apenas se está em FRIO)
+    has_previous_pain = False
+    if current_stage == FUNIL_LONGO_FASE_1_FRIO and message_history:
+        # Lista de palavras-chave de dor (mesma lista usada em detect_funil_longo_trigger)
+        dor_keywords = [
+            "dor", "problema", "incomoda", "quero emagrecer", "quero perder peso",
+            "barriga", "flacidez", "celulite", "autoestima",
+            "tenho vergonha", "sinto vergonha", "me dá vergonha", "vergonha de",
+            "não gosto", "me incomoda", "me derruba", "travamento", "objetivo",
+            "quero definir", "quero ganhar massa", "pochete", "papada",
+            "gordinha", "gordo", "gorda", "meio gordinha", "meio gordo", "meio gorda",
+            "gorda", "obesa", "obeso", "estou gorda", "me sinto gorda", "sou gorda",
+            "triste", "me sinto", "me sinto muito", "sentindo", "estou me sentindo",
+            "insatisfeita", "insatisfeito", "não gosto do meu", "não gosto da minha",
+            "evito", "não consigo", "sempre desisto", "falta disciplina",
+            "emagrecer", "emagrecer msm", "queria emagrecer", "preciso emagrecer",
+            "impossível continuar", "não dá mais", "não aguento mais", "não aguento",
+            "preciso mudar", "preciso mudar isso", "tem que mudar", "tem q mudar",
+            "não posso mais", "não consigo mais", "não dá pra continuar", "não dá pra continuar assim",
+            "preciso fazer algo", "preciso fazer alguma coisa", "algo tem que mudar",
+            "tem que ser diferente", "tem q ser diferente", "preciso de uma solução",
+            "não sei", "n sei", "não sei o que", "n sei o que", "não sei bem",
+            "n sei bem", "não sei exatamente", "n sei exatamente", "não sei exataemnte",
+            "n sei exataemnte", "não sei direito", "n sei direito", "não sei como",
+            "n sei como", "não tenho certeza", "n tenho certeza", "não sei ao certo",
+            "n sei ao certo", "tô perdida", "to perdida", "estou perdida", "tô confusa",
+            "to confusa", "estou confusa", "não entendo", "n entendo", "não entendi",
+            "n entendi", "me ajuda", "me ajuda ai", "me ajuda aí", "preciso de ajuda",
+            "preciso ajuda", "me orienta", "me oriente", "me explica", "me fala"
+        ]
+        
+        # Verifica mensagens anteriores do usuário (role="user")
+        for msg in message_history:
+            if msg.get("role") == "user":
+                msg_content = msg.get("content", "").lower()
+                # Verifica se contém palavras-chave de dor
+                if any(keyword in msg_content for keyword in dor_keywords):
+                    # Exclui "falta de vergonha" que indica interesse, não dor
+                    if "falta de vergonha" not in msg_content and "falta vergonha na cara" not in msg_content and "vergonha na cara" not in msg_content:
+                        has_previous_pain = True
+                        print(f"[AUTOMATION] ✅ Dor detectada em mensagem anterior: '{msg_content[:100]}'")
+                        break
     
-    # Se for CHOOSE_PLAN, força trigger ESCOLHEU_PLANO (não passa por detect_funil_longo_trigger)
-    if intent == "CHOOSE_PLAN":
-        trigger = "ESCOLHEU_PLANO"
-        print(f"[AUTOMATION] 🎯 Intent CHOOSE_PLAN detectado -> trigger ESCOLHEU_PLANO (bypass detect_funil_longo_trigger)")
+    # Se já houve dor anteriormente e está em FRIO, dispara DOR_DETECTADA diretamente
+    if has_previous_pain and current_stage == FUNIL_LONGO_FASE_1_FRIO:
+        trigger = "DOR_DETECTADA"
+        print(f"[AUTOMATION] 🎯 Dor anterior detectada + mensagem subsequente -> DOR_DETECTADA (bypass detect_funil_longo_trigger)")
     else:
-        trigger = detect_funil_longo_trigger(message, thread_meta)
+        # CORREÇÃO D: Usa intent_classifier para distinguir ASK_PLANS vs CHOOSE_PLAN ANTES de detectar trigger
+        from .intent_classifier import detect_plans_intent
+        
+        # Detecta intent primeiro para ajustar trigger
+        intent = detect_plans_intent(message, current_stage)
+        
+        # Se for CHOOSE_PLAN, força trigger ESCOLHEU_PLANO (não passa por detect_funil_longo_trigger)
+        if intent == "CHOOSE_PLAN":
+            trigger = "ESCOLHEU_PLANO"
+            print(f"[AUTOMATION] 🎯 Intent CHOOSE_PLAN detectado -> trigger ESCOLHEU_PLANO (bypass detect_funil_longo_trigger)")
+        else:
+            trigger = detect_funil_longo_trigger(message, thread_meta)
     
     if trigger:
         print(f"[AUTOMATION] 🎯 Gatilho detectado: {trigger} (mensagem: '{message[:100]}', stage: {thread_meta.get('lead_stage')}, intent: {intent})")

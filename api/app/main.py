@@ -2172,12 +2172,20 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
     
     # Processa automação (ANTES de chamar LLM)
     logger.info(f"[WEBHOOK-TWILIO] 🔍 Processando automação para mensagem: '{full_content[:100]}'")
+    
+    # Prepara histórico de mensagens para verificar dor anterior
+    message_history = [
+        {"role": m.role, "content": m.content}
+        for m in hist
+    ]
+    
     new_lead_stage, automation_metadata, should_skip_llm = await process_automation(
         message=full_content,
         phone_number=phone_to_send,
         thread_meta=current_meta,
         db_session=db,
-        thread_id=t.id
+        thread_id=t.id,
+        message_history=message_history
     )
     logger.info(f"[WEBHOOK-TWILIO] 🔍 Resultado automação: new_stage={new_lead_stage}, should_skip={should_skip_llm}, metadata={automation_metadata}")
     
