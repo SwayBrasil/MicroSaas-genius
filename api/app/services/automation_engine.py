@@ -191,6 +191,12 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
             "insatisfeita", "insatisfeito", "não gosto do meu", "não gosto da minha",
             "evito", "não consigo", "sempre desisto", "falta disciplina",
             "emagrecer", "emagrecer msm", "queria emagrecer", "preciso emagrecer",
+            # Expressões de frustração/necessidade de mudança
+            "impossível continuar", "não dá mais", "não aguento mais", "não aguento",
+            "preciso mudar", "preciso mudar isso", "tem que mudar", "tem q mudar",
+            "não posso mais", "não consigo mais", "não dá pra continuar", "não dá pra continuar assim",
+            "preciso fazer algo", "preciso fazer alguma coisa", "algo tem que mudar",
+            "tem que ser diferente", "tem q ser diferente", "preciso de uma solução",
             # Respostas vagas/indecisas que indicam necessidade de ajuda
             "não sei", "n sei", "não sei o que", "n sei o que", "não sei bem",
             "n sei bem", "não sei exatamente", "n sei exatamente", "não sei exataemnte",
