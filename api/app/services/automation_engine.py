@@ -504,9 +504,13 @@ async def process_automation(
                         print(f"[AUTOMATION] ✅ Dor detectada em mensagem anterior: '{msg_content[:100]}'")
                         break
     
+    # Inicializa intent como None
+    intent = None
+    
     # Se já houve dor anteriormente e está em FRIO, dispara DOR_DETECTADA diretamente
     if has_previous_pain and current_stage == FUNIL_LONGO_FASE_1_FRIO:
         trigger = "DOR_DETECTADA"
+        intent = "OTHER"  # Define intent para evitar erro no print
         print(f"[AUTOMATION] 🎯 Dor anterior detectada + mensagem subsequente -> DOR_DETECTADA (bypass detect_funil_longo_trigger)")
     else:
         # CORREÇÃO D: Usa intent_classifier para distinguir ASK_PLANS vs CHOOSE_PLAN ANTES de detectar trigger
