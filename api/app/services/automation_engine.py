@@ -374,6 +374,41 @@ async def execute_funil_longo_action(
         if template_text:
             await asyncio.to_thread(twilio_provider.send_text, phone_number, template_text, "BOT")
             messages_sent.append(template_text)
+            print(f"[AUTOMATION] ✅ Template '{template_code}' enviado para {phone_number}")
+        else:
+            # Fallback: envia mensagem hardcoded se template não for encontrado
+            print(f"[AUTOMATION] ⚠️ Template '{template_code}' não encontrado, usando fallback")
+            if is_anual:
+                fallback_msg = """Amoo! 🔥 Bora garantir sua transformação agoraaaa!! 💖
+
+Aqui está o link pra você finalizar o *Plano Anual* do LIFE:
+
+➡️ https://edzz.la/DO408?a=10554737
+
+💳 Gatinha, antes de finalizar, ajusta o limite do cartão lá no app do seu banco para algo em torno de R$50.  
+
+Isso não vai comprometer o seu limite total, é só pra autorização da primeira parcela mesmo.
+
+O sistema vai cobrar apenas a parcela mensal certinha, tá?
+
+Assim que finalizar, me avisa aqui que eu já te envio todos os acessos e te coloco no caminho da sua melhor versão.  
+
+Tô te esperando do outro lado! 🚀✨"""
+            else:
+                fallback_msg = """🔥 Bora garantir sua transformação agoraaaa!! 💖
+
+Aqui tá o link do *Plano Mensal* pra você finalizar:
+
+➡️ https://edzz.la/GQRLF?a=10554737
+
+É super simples: você assina, já recebe os acessos e começa hoje mesmo com treino e dieta alinhadinhos com o que você me contou. 😍
+
+Assim que finalizar, me avisa aqui que eu já te envio tudo e organizo seu passo a passo no LIFE.  
+
+Tô aqui pra caminhar contigo, gata! ✨"""
+            await asyncio.to_thread(twilio_provider.send_text, phone_number, fallback_msg, "BOT")
+            messages_sent.append(fallback_msg)
+            print(f"[AUTOMATION] ✅ Mensagem de checkout (fallback) enviada para {phone_number}")
         
         # Marca que checkout foi enviado (evita reenvio de áudio3)
         if thread_id and db_session:

@@ -76,12 +76,22 @@ Plano Anual – {anual.get('preco', 'R$598,80 (ou 12x de R$49,90)')}
                 else:
                     # Arquivo de texto simples
                     with open(template_path, "r", encoding="utf-8") as f:
-                        return f.read().strip()
+                        content = f.read().strip()
+                        print(f"[TEMPLATE_LOADER] ✅ Template carregado: {template_name} de {template_path}")
+                        return content
             except Exception as e:
-                print(f"⚠️ Erro ao carregar template {template_name}: {e}")
+                print(f"⚠️ Erro ao carregar template {template_name} de {template_path}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
     
+    # Log detalhado quando não encontra
     print(f"⚠️ Template não encontrado: {template_name}")
+    print(f"[TEMPLATE_LOADER] Tentou os seguintes caminhos:")
+    for base_path in FALLBACK_PATHS:
+        template_path = base_path / template_name
+        exists = template_path.exists()
+        print(f"  - {template_path} {'✅' if exists else '❌'}")
     return None
 
 
