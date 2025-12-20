@@ -290,7 +290,7 @@ def send_audio(to_e164: str, audio_url: str, sender: str = "BOT") -> str:
         raise
 
 
-def send_image(to_e164: str, image_url: str, sender: str = "BOT") -> str:
+def send_image(to_e164: str, image_url: str, sender: str = "BOT", body: str = None) -> str:
     """
     Envia imagem pelo WhatsApp via Twilio.
     
@@ -298,6 +298,7 @@ def send_image(to_e164: str, image_url: str, sender: str = "BOT") -> str:
         to_e164: Número do destinatário (formato E.164)
         image_url: URL pública da imagem (deve ser acessível pelo Twilio)
         sender: "BOT" ou "HUMANO" (apenas para log)
+        body: Texto opcional (legenda da imagem)
     
     Returns:
         SID da mensagem enviada
@@ -315,11 +316,18 @@ def send_image(to_e164: str, image_url: str, sender: str = "BOT") -> str:
     from_ = FROM if FROM.startswith("whatsapp:") else f"whatsapp:{FROM}"
     
     try:
-        msg = _client.messages.create(
-            to=to,
-            from_=from_,
-            media_url=[image_url]  # Twilio aceita lista de URLs de mídia
-        )
+        # Constrói parâmetros da mensagem
+        msg_params = {
+            "to": to,
+            "from_": from_,
+            "media_url": [image_url]  # Twilio aceita lista de URLs de mídia
+        }
+        
+        # Adiciona body (legenda) se fornecido
+        if body:
+            msg_params["body"] = body
+        
+        msg = _client.messages.create(**msg_params)
         
         if sender.upper() == "BOT":
             print(f"\033[94m[TWILIO][BOT] → {to} | IMAGEM | SID={msg.sid} | URL={image_url}\033[0m")

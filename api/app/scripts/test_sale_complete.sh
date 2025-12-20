@@ -46,3 +46,4 @@ echo ""
 echo "💡 Dica: Se você forneceu um telefone válido, uma thread foi criada automaticamente"
 echo "   e a mensagem pós-compra deve ter sido enviada via WhatsApp!"
 
+

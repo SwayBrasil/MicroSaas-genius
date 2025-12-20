@@ -159,19 +159,15 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
             return "INTERESSE_PLANO"
     
     # Gatilho de interesse em plano (está em AQUECIDO ou sem stage)
+    # CORREÇÃO D: Usa intent_classifier para distinguir ASK_PLANS vs CHOOSE_PLAN
     if current_stage in [FUNIL_LONGO_FASE_3_AQUECIDO, None]:
-        plano_keywords = [
-            "quero saber os planos",
-            "quero saber sobre os planos",
-            "como funciona o pagamento",
-            "quanto custa",
-            "preço",
-            "planos",
-            "quais são os planos",
-            "me fala dos planos"
-        ]
-        if any(keyword in message_lower for keyword in plano_keywords):
+        from .intent_classifier import detect_plans_intent
+        intent = detect_plans_intent(message, current_stage)
+        
+        if intent == "ASK_PLANS":
             return "INTERESSE_PLANO"
+        elif intent == "CHOOSE_PLAN":
+            return "ESCOLHEU_PLANO"
     
     # Gatilho de dor (está na etapa 1 - FRIO ou sem stage)
     # IMPORTANTE: Detecta dor mesmo se já está em FRIO (lead já recebeu áudio 1)
@@ -204,22 +200,13 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
             return "DOR_DETECTADA"
     
     # Gatilho de escolha de plano (está em AQUECIDO)
+    # CORREÇÃO D: Usa intent_classifier para detectar CHOOSE_PLAN
     if current_stage == FUNIL_LONGO_FASE_3_AQUECIDO:
-        escolha_keywords = [
-            "quero o mensal", 
-            "quero o anual", 
-            "quero mensal",
-            "quero anual",
-            "mensal",
-            "anual",
-            "plano mensal",
-            "plano anual"
-        ]
-        # Verifica se é uma escolha explícita (não apenas mencionar a palavra)
-        if any(keyword in message_lower for keyword in escolha_keywords):
-            # Verifica se não é apenas uma pergunta
-            if not message_lower.endswith("?") and "qual" not in message_lower:
-                return "ESCOLHEU_PLANO"
+        from .intent_classifier import detect_plans_intent
+        intent = detect_plans_intent(message, current_stage)
+        
+        if intent == "CHOOSE_PLAN":
+            return "ESCOLHEU_PLANO"
     
     return None
 
@@ -301,10 +288,30 @@ async def execute_funil_longo_action(
         metadata["messages_sent"] = messages_sent
     
     elif trigger == "DOR_DETECTADA":
-        # FASE 2: Automação NÃO envia nada, deixa LLM processar
-        # O LLM vai enviar: áudio 2 + 8 imagens + texto final
-        # Isso evita duplicação e garante que o LLM escolha o áudio correto baseado na dor
-        print(f"[AUTOMATION] 🎯 Fase 2 detectada (dor), deixando LLM processar")
+        # FASE 2: Executa PACOTE_FASE_2 fixo (sem LLM)
+        # Pacote fixo: áudio2 + 8 imagens + textos com delays corretos
+        print(f"[AUTOMATION] 🎯 Fase 2 detectada (dor), executando PACOTE_FASE_2 fixo")
+        
+        from .funnel_packages import execute_pacote_fase_2
+        
+        # Detecta qual áudio usar baseado na mensagem (por enquanto usa genérico)
+        # TODO: Pode melhorar para escolher áudio específico baseado na dor mencionada
+        audio_id = "audio2_dor_generica"
+        
+        try:
+            msgs_sent, pkg_metadata = await execute_pacote_fase_2(
+                phone_number=phone_number,
+                audio_id=audio_id,
+                db_session=db_session,
+                thread_id=thread_id
+            )
+            messages_sent.extend(msgs_sent)
+            metadata.update(pkg_metadata)
+            print(f"[AUTOMATION] ✅ PACOTE_FASE_2 executado com sucesso")
+        except Exception as e:
+            print(f"[AUTOMATION] ❌ Erro ao executar PACOTE_FASE_2: {e}")
+            import traceback
+            traceback.print_exc()
         
         new_stage = FUNIL_LONGO_FASE_2_AQUECIMENTO
         metadata["event"] = "DOR_DETECTADA"
@@ -312,57 +319,37 @@ async def execute_funil_longo_action(
         metadata["messages_sent"] = messages_sent
     
     elif trigger == "INTERESSE_PLANO":
-        # Envia áudio 3 + template de planos
-        audio_path = get_audio_path("audio3_explicacao_planos")
-        if not audio_path:
-            print(f"[AUTOMATION] ❌ Áudio 3 não encontrado no mapeamento")
-            messages_sent.append("[Erro: áudio 3 não encontrado]")
-        else:
-            public_base = os.getenv("PUBLIC_BASE_URL", "")
-            files_base = os.getenv("PUBLIC_FILES_BASE_URL", "")
-            
-            if public_base and "localhost" not in public_base:
-                base_url = public_base.rstrip("/")
-            elif files_base and "localhost" not in files_base:
-                base_url = files_base.rstrip("/")
-            else:
-                base_url = "http://localhost:8000"
-            
-            audio_path_clean = audio_path.lstrip("/")
-            if audio_path_clean.startswith("audios/"):
-                audio_path_clean = audio_path_clean[7:]
-            audio_url = f"{base_url}/audios/{audio_path_clean}"
-            
-            print(f"[AUTOMATION] 🎵 Enviando áudio 3: {audio_url}")
-            try:
-                await asyncio.to_thread(twilio_provider.send_audio, phone_number, audio_url, "BOT")
-                print(f"[AUTOMATION] ✅ Áudio 3 enviado com sucesso para {phone_number}")
-                messages_sent.append("[Áudio enviado: 03-explicacao-planos]")
-            except Exception as e:
-                print(f"[AUTOMATION] ❌ ERRO ao enviar áudio 3: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                messages_sent.append(f"[Erro ao enviar áudio 3: {str(e)}]")
+        # FASE 3: Executa PACOTE_FASE_3 fixo (sem LLM)
+        # Pacote fixo: intro + áudio3 + planos + pergunta com delays corretos
+        print(f"[AUTOMATION] 🎯 Interesse em planos detectado, executando PACOTE_FASE_3 fixo")
         
-        # Envia template de planos
-        template_text = get_template_by_code("planos-life")
-        if template_text:
-            try:
-                await asyncio.to_thread(twilio_provider.send_text, phone_number, template_text, "BOT")
-                messages_sent.append(template_text)
-            except Exception as e:
-                print(f"[AUTOMATION] ❌ ERRO ao enviar template de planos: {str(e)}")
+        from .funnel_packages import execute_pacote_fase_3
+        
+        try:
+            msgs_sent, pkg_metadata = await execute_pacote_fase_3(
+                phone_number=phone_number,
+                db_session=db_session,
+                thread_id=thread_id
+            )
+            messages_sent.extend(msgs_sent)
+            metadata.update(pkg_metadata)
+            print(f"[AUTOMATION] ✅ PACOTE_FASE_3 executado com sucesso")
+        except Exception as e:
+            print(f"[AUTOMATION] ❌ Erro ao executar PACOTE_FASE_3: {e}")
+            import traceback
+            traceback.print_exc()
         
         new_stage = FUNIL_LONGO_FASE_3_AQUECIDO
-        metadata["audio_sent"] = "03-explicacao-planos"
-        metadata["template_sent"] = "planos-life"
         metadata["event"] = "IA_SENT_EXPLICACAO_PLANOS"
         metadata["messages_sent"] = messages_sent
     
     elif trigger == "ESCOLHEU_PLANO":
-        # Detecta qual plano
-        message_lower = (thread_meta.get("last_message", "") or "").lower()
-        is_anual = "anual" in message_lower
+        # CORREÇÃO D: Usa intent_classifier para detectar plano escolhido
+        from .intent_classifier import extract_plan_choice
+        message = thread_meta.get("last_message", "") or ""
+        plan_choice = extract_plan_choice(message)
+        
+        is_anual = plan_choice == "ANUAL" if plan_choice else "anual" in message.lower()
         
         # Envia template correto
         template_code = "fechamento-anual" if is_anual else "fechamento-mensal"
@@ -370,6 +357,28 @@ async def execute_funil_longo_action(
         if template_text:
             await asyncio.to_thread(twilio_provider.send_text, phone_number, template_text, "BOT")
             messages_sent.append(template_text)
+        
+        # Marca que checkout foi enviado (evita reenvio de áudio3)
+        if thread_id and db_session:
+            try:
+                from ..models import Thread
+                from datetime import datetime
+                thread = db_session.get(Thread, thread_id)
+                if thread:
+                    meta = thread.meta or {}
+                    if isinstance(meta, str):
+                        try:
+                            import json
+                            meta = json.loads(meta)
+                        except:
+                            meta = {}
+                    meta["checkout_sent_at"] = datetime.now().isoformat()
+                    meta["last_checkout_plan"] = "anual" if is_anual else "mensal"
+                    thread.meta = meta
+                    db_session.commit()
+                    print(f"[AUTOMATION] ✅ Marcado checkout_sent_at (plano: {'anual' if is_anual else 'mensal'})")
+            except Exception as e:
+                print(f"[AUTOMATION] ⚠️ Erro ao marcar checkout_sent_at: {e}")
         
         new_stage = FUNIL_LONGO_FASE_4_QUENTE
         metadata["template_sent"] = template_code
@@ -430,23 +439,45 @@ async def process_automation(
         return None, {"support_detected": True, "reason": support_reason, "need_human": True}, True
     
     # 2. DETECÇÃO DE GATILHOS DO FUNIL LONGO
-    trigger = detect_funil_longo_trigger(message, thread_meta)
+    # CORREÇÃO D: Usa intent_classifier para distinguir ASK_PLANS vs CHOOSE_PLAN ANTES de detectar trigger
+    from .intent_classifier import detect_plans_intent
+    
+    # Detecta intent primeiro para ajustar trigger
+    intent = detect_plans_intent(message, thread_meta.get("lead_stage"))
+    
+    # Se for CHOOSE_PLAN, força trigger ESCOLHEU_PLANO (não passa por detect_funil_longo_trigger)
+    if intent == "CHOOSE_PLAN":
+        trigger = "ESCOLHEU_PLANO"
+        print(f"[AUTOMATION] 🎯 Intent CHOOSE_PLAN detectado -> trigger ESCOLHEU_PLANO (bypass detect_funil_longo_trigger)")
+    else:
+        trigger = detect_funil_longo_trigger(message, thread_meta)
+    
     if trigger:
-        print(f"[AUTOMATION] 🎯 Gatilho detectado: {trigger} (mensagem: '{message[:100]}', stage: {thread_meta.get('lead_stage')})")
+        print(f"[AUTOMATION] 🎯 Gatilho detectado: {trigger} (mensagem: '{message[:100]}', stage: {thread_meta.get('lead_stage')}, intent: {intent})")
         new_stage, metadata = await execute_funil_longo_action(
             trigger, phone_number, thread_meta, db_session, thread_id
         )
         # FASE 1 (ENTRY_FUNIL_LONGO): Automação envia apenas áudio, NÃO chama LLM (aguarda resposta da lead)
-        # FASE 2 (DOR_DETECTADA): Automação não envia nada, LLM processa tudo
+        # FASE 2 (DOR_DETECTADA): Automação executa PACOTE_FASE_2 fixo, NÃO chama LLM
+        # FASE 3 (INTERESSE_PLANO): Automação executa PACOTE_FASE_3 fixo, NÃO chama LLM
+        # FASE 4 (ESCOLHEU_PLANO): Automação envia link, NÃO chama LLM
         # Outras fases: Automação completa, não chama LLM
         if trigger == "ENTRY_FUNIL_LONGO":
             # Fase 1: automação já enviou áudio, não precisa chamar LLM agora
             metadata["event"] = trigger
             return new_stage, metadata, True  # should_skip=True: não chame LLM, aguarde resposta da lead
         elif trigger == "DOR_DETECTADA":
-            # Fase 2: automação não enviou nada, LLM deve processar
+            # Fase 2: automação executou PACOTE_FASE_2 fixo, não chama LLM
             metadata["event"] = trigger
-            return new_stage, metadata, False  # should_skip=False: LLM ainda deve responder
+            return new_stage, metadata, True  # should_skip=True: pacote fixo já executou tudo
+        elif trigger == "INTERESSE_PLANO":
+            # Fase 3: automação executou PACOTE_FASE_3 fixo, não chama LLM
+            metadata["event"] = trigger
+            return new_stage, metadata, True  # should_skip=True: pacote fixo já executou tudo
+        elif trigger == "ESCOLHEU_PLANO":
+            # Fase 4: automação enviou link, não chama LLM
+            metadata["event"] = trigger
+            return new_stage, metadata, True  # should_skip=True: link já foi enviado
         else:
             # Outras fases: automação completa, não chama LLM
             return new_stage, metadata, True  # should_skip=True: não chame LLM
@@ -508,11 +539,16 @@ async def trigger_bf_funnel(
         
         audio_url = f"{base_url}{audio_path}"
         await asyncio.to_thread(twilio_provider.send_audio, phone_number, audio_url, "BOT")
-        print(f"[AUTOMATION] ✅ Áudio BF enviado para {phone_number}")
+        print(f"[AUTOMATION] ✅ [ORDEM 1/2] Áudio BF enviado para {phone_number}")
+        
+        # Delay após áudio para garantir ordem de entrega
+        await asyncio.sleep(3.0)  # 3.0s após áudio
+        print(f"[AUTOMATION] ⏳ Delay de 3.0s após áudio BF aplicado (GARANTIR ORDEM DE ENTREGA)")
     
-    # Texto de acompanhamento
+    # Texto de acompanhamento (DEPOIS do áudio)
     bf_text = "Gataaaaa, olha issoooo 🔥🔥🔥\n\nSaiu uma condição INSANA da Black Friday, só HOJE!!\n\nQuer saber como funciona pra você aproveitar?"
     await asyncio.to_thread(twilio_provider.send_text, phone_number, bf_text, "BOT")
+    print(f"[AUTOMATION] ✅ [ORDEM 2/2] Texto BF enviado")
     
     new_stage = BF_AQUECIDO
     metadata["audio_sent"] = "01-oferta-black-friday"
@@ -554,11 +590,16 @@ async def trigger_bf_followup(
         
         audio_url = f"{base_url}{audio_path}"
         await asyncio.to_thread(twilio_provider.send_audio, phone_number, audio_url, "BOT")
-        print(f"[AUTOMATION] ✅ Áudio BF follow-up enviado para {phone_number}")
+        print(f"[AUTOMATION] ✅ [ORDEM 1/2] Áudio BF follow-up enviado para {phone_number}")
+        
+        # Delay após áudio para garantir ordem de entrega
+        await asyncio.sleep(3.0)  # 3.0s após áudio
+        print(f"[AUTOMATION] ⏳ Delay de 3.0s após áudio BF follow-up aplicado (GARANTIR ORDEM DE ENTREGA)")
     
-    # Texto de acompanhamento
+    # Texto de acompanhamento (DEPOIS do áudio)
     followup_text = "Só passando aqui rapidinho porque essa promoção é literalmente a mais forte do ano 🔥\n\nSe ainda fizer sentido pra você, me chama aqui que te explico antes de acabar!"
     await asyncio.to_thread(twilio_provider.send_text, phone_number, followup_text, "BOT")
+    print(f"[AUTOMATION] ✅ [ORDEM 2/2] Texto BF follow-up enviado")
     
     new_stage = BF_FOLLOWUP_ENVIADO
     metadata["audio_sent"] = "02-followup-sem-resposta"
@@ -632,7 +673,11 @@ async def trigger_recup_50_followup_1(
         
         audio_url = f"{base_url}{audio_path}"
         await asyncio.to_thread(twilio_provider.send_audio, phone_number, audio_url, "BOT")
-        print(f"[AUTOMATION] ✅ Áudio recuperação 50% follow-up 1 enviado para {phone_number}")
+        print(f"[AUTOMATION] ✅ [ORDEM 1/2] Áudio recuperação 50% follow-up 1 enviado para {phone_number}")
+        
+        # Delay após áudio para garantir ordem de entrega
+        await asyncio.sleep(3.0)  # 3.0s após áudio
+        print(f"[AUTOMATION] ⏳ Delay de 3.0s após áudio recuperação 50% aplicado (GARANTIR ORDEM DE ENTREGA)")
     
     # Texto de acompanhamento
     followup_text = "Te mandei uma condição muito especial pro LIFE e não queria que passasse batido por você, gata. 💖\n\nMe chama aqui se ainda tiver vontade de aproveitar essa oportunidade!"
@@ -678,11 +723,16 @@ async def trigger_recup_50_followup_2(
         
         audio_url = f"{base_url}{audio_path}"
         await asyncio.to_thread(twilio_provider.send_audio, phone_number, audio_url, "BOT")
-        print(f"[AUTOMATION] ✅ Áudio recuperação 50% último chamado enviado para {phone_number}")
+        print(f"[AUTOMATION] ✅ [ORDEM 1/2] Áudio recuperação 50% último chamado enviado para {phone_number}")
+        
+        # Delay após áudio para garantir ordem de entrega
+        await asyncio.sleep(3.0)  # 3.0s após áudio
+        print(f"[AUTOMATION] ⏳ Delay de 3.0s após áudio recuperação 50% aplicado (GARANTIR ORDEM DE ENTREGA)")
     
-    # Texto de acompanhamento
+    # Texto de acompanhamento (DEPOIS do áudio)
     followup_text = "Prometo que é a última vez que apareço aqui sobre essa condição 🙈\n\nSe ainda bater aquela vontade de começar sua transformação com 50% OFF, é agora ou só na próxima… 😅🔥"
     await asyncio.to_thread(twilio_provider.send_text, phone_number, followup_text, "BOT")
+    print(f"[AUTOMATION] ✅ [ORDEM 2/2] Texto recuperação 50% último chamado enviado")
     
     new_stage = RECUP_50_SEM_RESPOSTA_2
     metadata["audio_sent"] = "03-audio-ultimo-chamado"

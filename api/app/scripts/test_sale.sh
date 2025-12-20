@@ -38,3 +38,4 @@ curl -X POST "http://localhost:8000/webhook/test-sale" \
 echo ""
 echo "✅ Teste concluído!"
 
+

@@ -267,6 +267,10 @@ async def _call_openai_with_retries(messages: List[Dict[str, Any]], use_function
                     "model": MODEL,
                     "messages": messages,
                     "timeout": REQUEST_TIMEOUT,
+                    "temperature": 0,  # Determinístico - reduz variação
+                    "top_p": 1,
+                    "presence_penalty": 0,
+                    "frequency_penalty": 0,
                 }
                 
                 if use_functions and function_iterations < max_function_iterations:

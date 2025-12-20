@@ -101,12 +101,24 @@ async def serve_audio(path: str):
     audio_file = _find_file(f"audios/{path}")
     if audio_file:
         print(f"[SERVE_AUDIO] ✅ Servindo: {audio_file}")
+        # Detecta tipo MIME correto baseado na extensão
+        mime_type = "audio/ogg"  # Padrão para OGG/OPUS
+        if audio_file.suffix.lower() == ".opus":
+            mime_type = "audio/ogg"  # OPUS usa container OGG
+        elif audio_file.suffix.lower() == ".ogg":
+            mime_type = "audio/ogg"
+        elif audio_file.suffix.lower() == ".mp3":
+            mime_type = "audio/mpeg"
+        elif audio_file.suffix.lower() == ".wav":
+            mime_type = "audio/wav"
+        
         return FileResponse(
             audio_file,
-            media_type="audio/ogg",  # .opus é similar a ogg
+            media_type=mime_type,
             headers={
                 "Content-Disposition": f'inline; filename="{audio_file.name}"',
                 "Access-Control-Allow-Origin": "*",  # Permite CORS para Twilio
+                "Content-Type": mime_type,  # Garante content-type explícito
             }
         )
     print(f"[SERVE_AUDIO] ❌ Arquivo não encontrado: audios/{path}")
@@ -2205,22 +2217,47 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
         
         return {"status": "ok", "automation_executed": True, "lead_stage": new_lead_stage}
     
+    # 🚨 VERIFICAÇÃO GLOBAL DE DUPLICAÇÃO - SEMPRE verifica se já enviou áudio 2 + imagens
+    # Esta verificação deve acontecer ANTES de qualquer processamento LLM
+    from datetime import datetime, timedelta
+    recent_assistant_messages = (
+        db.query(Message)
+        .filter(
+            Message.thread_id == t.id,
+            Message.role == "assistant",
+            Message.created_at >= datetime.utcnow() - timedelta(minutes=30)  # Últimas 30 minutos
+        )
+        .order_by(Message.created_at.desc())
+        .all()
+    )
+    
+    # Verifica se já enviou áudio 2 + imagens recentemente
+    has_recent_audio2 = False
+    has_recent_images = False
+    for msg in recent_assistant_messages:
+        content = msg.content or ""
+        # Verifica se tem áudio 2
+        if "[Áudio enviad" in content and "audio2" in content.lower():
+            has_recent_audio2 = True
+        # Verifica se tem as imagens img_resultado
+        if "[Imagem enviad" in content and "img_resultado" in content:
+            has_recent_images = True
+    
+    if has_recent_audio2 and has_recent_images:
+        # 🚨 BLOQUEIO CRÍTICO: Já enviou Fase 2 recentemente, NÃO deve repetir
+        logger.warning(f"[WEBHOOK-TWILIO] 🚨🚨🚨 DUPLICAÇÃO CRÍTICA DETECTADA! Thread {t.id} já enviou áudio 2 + imagens recentemente. BLOQUEANDO COMPLETAMENTE o envio duplicado.")
+        
+        # Adiciona contexto MUITO FORTE para a LLM não repetir
+        hist.append({
+            "role": "system",
+            "content": "[CONTEXTO CRÍTICO - BLOQUEIO ABSOLUTO] Você JÁ enviou áudio 2 + 8 imagens img_resultado + pergunta 'o que tá faltando' RECENTEMENTE nesta conversa (há menos de 30 minutos). A lead está respondendo essa pergunta. Você DEVE interpretar como interesse em planos e enviar APENAS: [Áudio enviado: audio3_explicacao_planos] + texto dos planos (Mensal + Anual). É PROIBIDO repetir áudio 2 ou qualquer imagem img_resultado. Se você tentar repetir, o sistema irá bloquear."
+        })
+    
     # Se foi Fase 2, automação não enviou nada, LLM ainda precisa responder
     if automation_trigger == "DOR_DETECTADA":
         logger.info(f"[WEBHOOK-TWILIO] ✅ Automação processou gatilho {automation_trigger}, LLM vai responder agora")
         
-        # Verifica se já enviou áudio 2 + imagens antes (evita repetição)
-        # Aceita tanto "enviado" quanto "enviada" para compatibilidade
-        has_audio2 = any("[Áudio enviad" in msg.get("content", "") and "audio2" in msg.get("content", "") for msg in hist)
-        has_images = any("[Imagem enviad" in msg.get("content", "") and "img_resultado" in msg.get("content", "") for msg in hist)
-        
-        if has_audio2 and has_images:
-            # Já enviou Fase 2 antes, não deve repetir
-            hist.append({
-                "role": "system",
-                "content": "[CONTEXTO AUTOMAÇÃO] Você JÁ enviou áudio 2 + 8 imagens + pergunta 'o que tá faltando' antes. A lead está respondendo essa pergunta. Você DEVE interpretar como interesse em planos e enviar: [Áudio enviado: audio3_explicacao_planos] + texto dos planos (Mensal + Anual)."
-            })
-        else:
+        if not (has_recent_audio2 and has_recent_images):
             # Primeira vez na Fase 2, LLM deve enviar áudio 2 + 8 imagens + texto final
             hist.append({
                 "role": "system",
@@ -2291,11 +2328,67 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
             logger.info(f"[WEBHOOK-TWILIO] LLM reply (dict): {reply}")
         elif isinstance(reply, str):
             logger.info(f"[WEBHOOK-TWILIO] LLM reply (str, first 200 chars): {reply[:200]}")
+        
+        # 🛡️ VALIDAÇÃO DE RESPOSTA DO LLM
+        from .services.response_validator import validate_response_for_stage
+        reply_str = str(reply) if not isinstance(reply, dict) else reply.get("message", str(reply))
+        stage_id = current_meta.get("stage_id") if current_meta else None
+        phase = current_meta.get("phase") if current_meta else None
+        
+        # CORREÇÃO D: Passa mensagem do usuário para detectar intent (ASK_PLANS vs CHOOSE_PLAN)
+        user_message = full_content  # full_content contém a mensagem do usuário
+        
+        is_valid, error_reason, corrected_response = validate_response_for_stage(
+            reply_str, 
+            stage_id=stage_id, 
+            phase=phase, 
+            thread_meta=current_meta,
+            user_message=user_message
+        )
+        
+        if not is_valid and error_reason:
+            logger.warning(f"[WEBHOOK-TWILIO] ⚠️ Resposta do LLM inválida: {error_reason}")
+            if corrected_response:
+                logger.info(f"[WEBHOOK-TWILIO] ✅ Aplicando correção automática")
+                reply = corrected_response
+            else:
+                logger.error(f"[WEBHOOK-TWILIO] ❌ Não foi possível corrigir resposta. Erro: {error_reason}")
+        
     except Exception as e:
         logger.error(f"[WEBHOOK-TWILIO] Error generating LLM reply: {str(e)}", exc_info=True)
         reply = "Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente."
     await _broadcast(t.id, {"type": "assistant.typing.stop"})
 
+    # 🚨 VERIFICAÇÃO FINAL CRÍTICA - Bloqueia duplicação de áudio 2 + imagens ANTES DE PROCESSAR
+    reply_str = str(reply) if not isinstance(reply, dict) else reply.get("message", str(reply))
+    
+    # Verifica se a resposta contém áudio 2 + imagens
+    has_audio2_in_reply = "[Áudio enviado: audio2" in reply_str.lower() or "[Áudio enviada: audio2" in reply_str.lower()
+    has_images_in_reply = "img_resultado" in reply_str.lower()
+    
+    if has_audio2_in_reply and has_images_in_reply:
+        # Verifica novamente se já enviou recentemente (double check usando variáveis já calculadas)
+        if has_recent_audio2 and has_recent_images:
+            logger.error(f"[WEBHOOK-TWILIO] 🚨🚨🚨 BLOQUEIO CRÍTICO DE DUPLICAÇÃO! LLM tentou enviar áudio 2 + imagens novamente. Thread {t.id}. Resposta BLOQUEADA e substituída.")
+            
+            # Substitui COMPLETAMENTE a resposta por uma que não repete
+            reply = "[Áudio enviado: audio3_explicacao_planos]\n\nEntendi! Você já está interessada nos planos. Deixa eu te mostrar as opções:\n\n📦 **PLANO MENSAL**\n- Acesso completo\n- Suporte prioritário\n\n📦 **PLANO ANUAL**\n- Acesso completo\n- Suporte prioritário\n- Melhor custo-benefício\n\nQual faz mais sentido pra você?"
+
+    # 🚨 VERIFICAÇÃO FINAL CRÍTICA - Bloqueia duplicação de áudio 2 + imagens ANTES DE PROCESSAR
+    reply_str = str(reply) if not isinstance(reply, dict) else reply.get("message", str(reply))
+    
+    # Verifica se a resposta contém áudio 2 + imagens
+    has_audio2_in_reply = "[Áudio enviado: audio2" in reply_str.lower() or "[Áudio enviada: audio2" in reply_str.lower()
+    has_images_in_reply = "img_resultado" in reply_str.lower()
+    
+    if has_audio2_in_reply and has_images_in_reply:
+        # Verifica novamente se já enviou recentemente (usa variáveis já calculadas acima)
+        if has_recent_audio2 and has_recent_images:
+            logger.error(f"[WEBHOOK-TWILIO] 🚨🚨🚨 BLOQUEIO CRÍTICO DE DUPLICAÇÃO! LLM tentou enviar áudio 2 + imagens novamente. Thread {t.id}. Resposta BLOQUEADA e substituída.")
+            
+            # Substitui COMPLETAMENTE a resposta por uma que não repete
+            reply = "[Áudio enviado: audio3_explicacao_planos]\n\nEntendi! Você já está interessada nos planos. Deixa eu te mostrar as opções:\n\n📦 **PLANO MENSAL**\n- Acesso completo\n- Suporte prioritário\n\n📦 **PLANO ANUAL**\n- Acesso completo\n- Suporte prioritário\n- Melhor custo-benefício\n\nQual faz mais sentido pra você?"
+    
     # Processa resposta (pode enviar áudio, template ou texto)
     try:
         final_message, metadata = await process_llm_response(

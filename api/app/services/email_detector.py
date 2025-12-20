@@ -58,3 +58,4 @@ def should_update_contact_email(message_content: str, current_email: Optional[st
     return detected_email
 
 
+
