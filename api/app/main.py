@@ -2174,8 +2174,10 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
     logger.info(f"[WEBHOOK-TWILIO] 🔍 Processando automação para mensagem: '{full_content[:100]}'")
     
     # Prepara histórico de mensagens para verificar dor anterior
-    message_history = [
-        {"role": m.role, "content": m.content}
+    # hist já é uma lista de dicts com 'role' e 'content', não objetos Message
+    message_history = hist if hist and isinstance(hist[0], dict) else [
+        {"role": m.get("role") if isinstance(m, dict) else (m.role if hasattr(m, "role") else "user"), 
+         "content": m.get("content") if isinstance(m, dict) else (m.content if hasattr(m, "content") else "")}
         for m in hist
     ]
     
