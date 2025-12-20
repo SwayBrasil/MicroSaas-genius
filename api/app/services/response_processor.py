@@ -17,7 +17,8 @@ async def process_llm_response(
     reply: Any,
     phone_number: str,
     thread_id: Optional[int] = None,
-    db_session = None
+    db_session = None,
+    thread_meta: Optional[Dict] = None
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """
     Processa a resposta do LLM e envia áudios/imagens/templates conforme necessário.
@@ -112,6 +113,24 @@ async def process_llm_response(
     
     # Parse da resposta em ações ordenadas
     actions = parse_multimedia_reply(reply_str)
+    
+    # 🚨 BLOQUEIO DE ÁUDIO EM STAGE "QUENTE" (modo chatbot apenas)
+    # Quando está em "quente", deve funcionar apenas como chatbot (texto), sem áudio
+    if thread_meta:
+        current_stage = thread_meta.get("stage_id") or thread_meta.get("lead_stage") or thread_meta.get("phase")
+        if current_stage == "quente" or current_stage == "4":
+            # Remove todas as ações de áudio
+            original_count = len(actions)
+            actions = [a for a in actions if a.get("type") != "audio"]
+            removed_count = original_count - len(actions)
+            if removed_count > 0:
+                print(f"[RESPONSE_PROCESSOR] 🚫 BLOQUEIO: Stage 'quente' detectado. Removendo {removed_count} ação(ões) de áudio (modo chatbot apenas)")
+                # Remove também os comandos de áudio do texto final
+                reply_str = re.sub(r'\[Áudio enviado:.*?\]', '', reply_str, flags=re.IGNORECASE)
+                reply_str = re.sub(r'\[Áudio enviada:.*?\]', '', reply_str, flags=re.IGNORECASE)
+                reply_str = reply_str.strip()
+                # Re-parse após remover comandos de áudio
+                actions = parse_multimedia_reply(reply_str)
     
     # REGRA 2: Detecção por CONTEÚDO da resposta (não por intent do usuário)
     # A decisão NÃO DEPENDE DO USUÁRIO, e sim do CONTEÚDO da resposta gerada pelo LLM

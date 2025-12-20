@@ -2319,6 +2319,15 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
             })
             
             logger.info(f"[WEBHOOK-TWILIO] ✅ Compra confirmada detectada para thread {t.id}: {plan_type}, {value_formatted}")
+    
+    # 🚨 BLOQUEIO DE ÁUDIO EM STAGE "QUENTE" - Adiciona contexto para LLM não enviar áudio
+    current_stage = current_meta.get("stage_id") or current_meta.get("lead_stage") or current_meta.get("phase")
+    if current_stage == "quente" or current_stage == "4":
+        hist.append({
+            "role": "system",
+            "content": "[REGRA CRÍTICA - MODO CHATBOT] Você está na fase 'quente' do funil. Nesta fase, você DEVE funcionar APENAS como chatbot (texto puro). É PROIBIDO enviar áudio ou imagens. Responda apenas com texto conversacional, como uma amiga conversando normalmente. NÃO use comandos [Áudio enviado: ...] ou [Imagem enviada: ...]."
+        })
+        logger.info(f"[WEBHOOK-TWILIO] 🚫 Stage 'quente' detectado. Bloqueando áudio/imagens (modo chatbot apenas)")
 
     await _broadcast(t.id, {"type": "assistant.typing.start"})
     try:
@@ -2395,7 +2404,8 @@ async def _process_message_for_llm(t: Thread, phone_to_send: str, full_content: 
             reply=reply,
             phone_number=phone_to_send,
             thread_id=t.id,
-            db_session=db
+            db_session=db,
+            thread_meta=current_meta  # Passa metadata para bloquear áudio em stage "quente"
         )
         
         # Salva mensagem no banco
