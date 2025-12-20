@@ -190,7 +190,16 @@ def detect_funil_longo_trigger(message: str, thread_meta: Optional[Dict] = None)
             "triste", "me sinto", "me sinto muito", "sentindo", "estou me sentindo",
             "insatisfeita", "insatisfeito", "não gosto do meu", "não gosto da minha",
             "evito", "não consigo", "sempre desisto", "falta disciplina",
-            "emagrecer", "emagrecer msm", "queria emagrecer", "preciso emagrecer"
+            "emagrecer", "emagrecer msm", "queria emagrecer", "preciso emagrecer",
+            # Respostas vagas/indecisas que indicam necessidade de ajuda
+            "não sei", "n sei", "não sei o que", "n sei o que", "não sei bem",
+            "n sei bem", "não sei exatamente", "n sei exatamente", "não sei exataemnte",
+            "n sei exataemnte", "não sei direito", "n sei direito", "não sei como",
+            "n sei como", "não tenho certeza", "n tenho certeza", "não sei ao certo",
+            "n sei ao certo", "tô perdida", "to perdida", "estou perdida", "tô confusa",
+            "to confusa", "estou confusa", "não entendo", "n entendo", "não entendi",
+            "n entendi", "me ajuda", "me ajuda ai", "me ajuda aí", "preciso de ajuda",
+            "preciso ajuda", "me orienta", "me oriente", "me explica", "me fala"
         ]
         # Exclui "falta de vergonha" e "vergonha na cara" que indicam interesse, não dor
         if "falta de vergonha" in message_lower or "falta vergonha na cara" in message_lower or "vergonha na cara" in message_lower:
