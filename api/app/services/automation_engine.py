@@ -227,7 +227,8 @@ async def execute_funil_longo_action(
     phone_number: str,
     thread_meta: Optional[Dict] = None,
     db_session = None,
-    thread_id: Optional[int] = None
+    thread_id: Optional[int] = None,
+    message: str = None
 ) -> Tuple[Optional[str], Dict[str, Any]]:
     """
     Executa ação do funil longo baseado no gatilho.
@@ -355,10 +356,11 @@ async def execute_funil_longo_action(
     elif trigger == "ESCOLHEU_PLANO":
         # CORREÇÃO D: Usa intent_classifier para detectar plano escolhido
         from .intent_classifier import extract_plan_choice
-        message = thread_meta.get("last_message", "") or ""
-        plan_choice = extract_plan_choice(message)
+        # Usa a mensagem atual passada como parâmetro, não last_message do meta
+        message_text = message or thread_meta.get("last_message", "") or ""
+        plan_choice = extract_plan_choice(message_text)
         
-        is_anual = plan_choice == "ANUAL" if plan_choice else "anual" in message.lower()
+        is_anual = plan_choice == "ANUAL" if plan_choice else "anual" in message_text.lower()
         
         # Envia template correto
         template_code = "fechamento-anual" if is_anual else "fechamento-mensal"
@@ -464,7 +466,7 @@ async def process_automation(
     if trigger:
         print(f"[AUTOMATION] 🎯 Gatilho detectado: {trigger} (mensagem: '{message[:100]}', stage: {thread_meta.get('lead_stage')}, intent: {intent})")
         new_stage, metadata = await execute_funil_longo_action(
-            trigger, phone_number, thread_meta, db_session, thread_id
+            trigger, phone_number, thread_meta, db_session, thread_id, message
         )
         # FASE 1 (ENTRY_FUNIL_LONGO): Automação envia apenas áudio, NÃO chama LLM (aguarda resposta da lead)
         # FASE 2 (DOR_DETECTADA): Automação executa PACOTE_FASE_2 fixo, NÃO chama LLM

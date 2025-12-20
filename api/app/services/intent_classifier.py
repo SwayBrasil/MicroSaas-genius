@@ -31,6 +31,7 @@ def detect_plans_intent(
     text_lower = text.lower().strip()
     
     # Padrões de escolha direta (CHOOSE_PLAN)
+    # IMPORTANTE: Verificar escolha ANTES de verificar perguntas genéricas
     choose_patterns = [
         r'\bquero\s+o\s+anual\b',
         r'\bquero\s+anual\b',
@@ -44,6 +45,14 @@ def detect_plans_intent(
         r'\bescolho\s+mensal\b',
         r'\bfechar\s+mensal\b',
         r'\bassinar\s+mensal\b',
+        # Padrões simples: "plano anual" ou "plano mensal" (especialmente após receber planos)
+        r'\bplano\s+anual\b',
+        r'\bplano\s+mensal\b',
+        # Variações comuns
+        r'\bo\s+anual\b',
+        r'\bo\s+mensal\b',
+        r'\banual\s+mesmo\b',
+        r'\bmensal\s+mesmo\b',
     ]
     
     # Verifica padrões de escolha
@@ -51,9 +60,12 @@ def detect_plans_intent(
         if re.search(pattern, text_lower):
             return "CHOOSE_PLAN"
     
-    # Caso especial: mensagem curta "anual" ou "mensal" isolada
-    # Só é CHOOSE_PLAN se estiver em contexto apropriado
-    if text_lower in ["anual", "mensal"]:
+    # Caso especial: mensagem curta "anual" ou "mensal" isolada OU "plano anual/mensal"
+    # Só é CHOOSE_PLAN se estiver em contexto apropriado (já recebeu planos)
+    if text_lower in ["anual", "mensal"] or text_lower in ["plano anual", "plano mensal"]:
+        # Se está em stage "aquecido" (já recebeu planos), é escolha
+        if current_stage in ["aquecido", "quente", "aquecimento"]:
+            return "CHOOSE_PLAN"
         # Verifica se a última mensagem do bot foi sobre escolher plano
         if last_bot_message:
             last_bot_lower = last_bot_message.lower()
@@ -64,11 +76,10 @@ def detect_plans_intent(
                 "escolhe",
                 "faz mais sentido"
             ]):
-                # E está em stage apropriado
-                if current_stage in ["aquecido", "quente", "aquecimento"]:
-                    return "CHOOSE_PLAN"
+                return "CHOOSE_PLAN"
     
     # Padrões de pergunta/conhecimento (ASK_PLANS)
+    # IMPORTANTE: Verificar ANTES se não é escolha (já verificado acima)
     ask_patterns = [
         r'\bquero\s+saber\s+(dos|sobre|os)\s+planos?\b',
         r'\bme\s+explica\s+(os|dos)\s+planos?\b',
@@ -77,16 +88,22 @@ def detect_plans_intent(
         r'\bpreço\b',
         r'\bpreços\b',
         r'\bcomo\s+funciona\s+(o|os)\s+planos?\b',
-        r'\bplanos?\b',  # Genérico, mas só se não for escolha
         r'\bopções\s+de\s+planos?\b',
         r'\bquais\s+(são|os)\s+planos?\b',
+        # Padrão genérico "planos" só se NÃO for escolha específica
+        r'\bplanos?\b',  # Genérico, mas só se não for escolha
     ]
     
     # Verifica padrões de pergunta
     for pattern in ask_patterns:
         if re.search(pattern, text_lower):
             # Garante que não é escolha disfarçada
-            if not any(choose in text_lower for choose in ["quero o", "vou de", "escolho", "fechar", "assinar"]):
+            # Verifica se contém palavras de escolha ou se é "plano anual/mensal"
+            is_choice = any(choose in text_lower for choose in [
+                "quero o", "vou de", "escolho", "fechar", "assinar",
+                "plano anual", "plano mensal", "o anual", "o mensal"
+            ])
+            if not is_choice:
                 return "ASK_PLANS"
     
     return "OTHER"
